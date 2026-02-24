@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { buildResearchPrompt } from "@/lib/research/prompt";
 import { rankSimilarCustomers } from "@/lib/research/similarity";
 import { fetchWebsiteSnapshot, normalizeUrl } from "@/lib/research/web";
+import { generateWithGemini } from "@/lib/research/llm";
 
 type Payload = {
   customerId?: string;
@@ -127,6 +128,15 @@ export async function POST(req: Request) {
       similarCustomers
     });
 
+    let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
+    let aiError: string | null = null;
+
+    try {
+      aiResult = await generateWithGemini(aiPrompt);
+    } catch (error) {
+      aiError = error instanceof Error ? error.message : "Gemini request failed";
+    }
+
     return NextResponse.json({
       query: {
         customerId: baseCustomer?.id ?? null,
@@ -139,7 +149,9 @@ export async function POST(req: Request) {
       },
       websiteSnapshots,
       similarCustomers,
-      aiPrompt
+      aiPrompt,
+      aiResult,
+      aiError
     });
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });

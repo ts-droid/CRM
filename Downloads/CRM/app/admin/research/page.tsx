@@ -12,6 +12,8 @@ type ResearchResponse = {
   websiteSnapshots: Array<{ url: string; title: string | null; vendoraFitScore: number }>;
   similarCustomers: Array<{ id: string; name: string; matchScore: number; potentialScore: number }>;
   aiPrompt: string;
+  aiResult?: { provider: "gemini"; model: string; outputText: string } | null;
+  aiError?: string | null;
 };
 
 export default function ResearchAdminPage() {
@@ -116,6 +118,27 @@ export default function ResearchAdminPage() {
           <section className="crm-card">
             <h3>AI Prompt</h3>
             <pre className="crm-pre">{result.aiPrompt}</pre>
+          </section>
+
+          <section className="crm-card">
+            <h3>{lang === "sv" ? "Gemini-svar" : "Gemini output"}</h3>
+            {result.aiError ? (
+              <p className="crm-subtle" style={{ color: "#b42318" }}>{result.aiError}</p>
+            ) : null}
+            {result.aiResult?.outputText ? (
+              <>
+                <p className="crm-subtle">
+                  {result.aiResult.provider} · {result.aiResult.model}
+                </p>
+                <pre className="crm-pre">{result.aiResult.outputText}</pre>
+              </>
+            ) : (
+              <p className="crm-subtle">
+                {lang === "sv"
+                  ? "Ingen LLM-output ännu. Kontrollera GEMINI_API_KEY och deploy."
+                  : "No LLM output yet. Verify GEMINI_API_KEY and redeploy."}
+              </p>
+            )}
           </section>
         </>
       ) : null}
