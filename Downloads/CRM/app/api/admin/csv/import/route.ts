@@ -2,6 +2,22 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseCsv } from "@/lib/admin/csv";
 
+function pick(row: Record<string, string>, aliases: string[]): string {
+  const lowered = Object.entries(row).reduce<Record<string, string>>((acc, [key, value]) => {
+    acc[key.trim().toLowerCase()] = value;
+    return acc;
+  }, {});
+
+  for (const alias of aliases) {
+    const value = lowered[alias.toLowerCase()];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -20,29 +36,38 @@ export async function POST(req: Request) {
 
     let created = 0;
     let updated = 0;
+    let skipped = 0;
 
     for (const row of rows) {
-      const name = row.name?.trim();
-      if (!name) continue;
+      const name = pick(row, ["name", "customer_name", "customer", "company", "company_name"]);
+      if (!name) {
+        skipped += 1;
+        continue;
+      }
+
+      const rowId = pick(row, ["id", "customer_id"]);
 
       const data = {
         name,
-        organization: row.organization || undefined,
-        industry: row.industry || undefined,
-        country: row.country || undefined,
-        region: row.region || undefined,
-        seller: row.seller || undefined,
-        website: row.website || undefined,
-        email: row.email || undefined,
-        phone: row.phone || undefined,
-        notes: row.notes || undefined,
-        potentialScore: row.potentialScore ? Math.max(0, Math.min(100, Number(row.potentialScore) || 50)) : 50
+        organization: pick(row, ["organization", "organisation", "legal_name"]) || undefined,
+        industry: pick(row, ["industry", "segment", "category"]) || undefined,
+        country: pick(row, ["country", "country_code", "land"]) || undefined,
+        region: pick(row, ["region", "area"]) || undefined,
+        seller: pick(row, ["seller", "owner", "sales_owner", "account_owner"]) || undefined,
+        website: pick(row, ["website", "site", "url", "domain"]) || undefined,
+        email: pick(row, ["email", "contact_email"]) || undefined,
+        phone: pick(row, ["phone", "telephone", "mobile"]) || undefined,
+        notes: pick(row, ["notes", "note", "comment"]) || undefined,
+        potentialScore: (() => {
+          const raw = pick(row, ["potentialscore", "potential_score", "potential", "score"]);
+          return raw ? Math.max(0, Math.min(100, Number(raw) || 50)) : 50;
+        })()
       };
 
-      if (row.id) {
+      if (rowId) {
         try {
           await prisma.customer.update({
-            where: { id: row.id },
+            where: { id: rowId },
             data
           });
           updated += 1;
@@ -56,7 +81,7 @@ export async function POST(req: Request) {
       created += 1;
     }
 
-    return NextResponse.json({ created, updated, total: rows.length });
+    return NextResponse.json({ created, updated, skipped, total: rows.length });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "CSV import failed" },

@@ -129,13 +129,13 @@ export default function ResearchAdminPage() {
         body: form
       });
 
-      const data = (await res.json()) as { error?: string; created?: number; updated?: number; total?: number };
+      const data = (await res.json()) as { error?: string; created?: number; updated?: number; skipped?: number; total?: number };
       if (!res.ok) throw new Error(data.error ?? "Import failed");
 
       setCsvStatus(
         lang === "sv"
-          ? `Import klar. Skapade: ${data.created ?? 0}, uppdaterade: ${data.updated ?? 0}, rader: ${data.total ?? 0}`
-          : `Import complete. Created: ${data.created ?? 0}, updated: ${data.updated ?? 0}, rows: ${data.total ?? 0}`
+          ? `Import klar. Skapade: ${data.created ?? 0}, uppdaterade: ${data.updated ?? 0}, hoppade över: ${data.skipped ?? 0}, rader: ${data.total ?? 0}`
+          : `Import complete. Created: ${data.created ?? 0}, updated: ${data.updated ?? 0}, skipped: ${data.skipped ?? 0}, rows: ${data.total ?? 0}`
       );
       formElement.reset();
     } catch (err) {
