@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useI18n } from "@/components/i18n";
 
 type CustomerRef = { id: string; name: string };
 
@@ -11,7 +12,6 @@ type Contact = {
   role: string | null;
   email: string | null;
   phone: string | null;
-  createdAt: string;
   customer: CustomerRef;
 };
 
@@ -21,6 +21,7 @@ export default function ContactsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t, lang } = useI18n();
 
   async function load() {
     setLoading(true);
@@ -33,7 +34,7 @@ export default function ContactsPage() {
       ]);
 
       if (!contactsRes.ok || !customersRes.ok) {
-        throw new Error("Kunde inte hämta data");
+        throw new Error(lang === "sv" ? "Kunde inte hämta data" : "Could not fetch data");
       }
 
       const contactsData = (await contactsRes.json()) as Contact[];
@@ -41,7 +42,7 @@ export default function ContactsPage() {
       setContacts(contactsData);
       setCustomers(customersData.map((item) => ({ id: item.id, name: item.name })));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Något gick fel");
+      setError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -49,7 +50,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [lang]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,13 +75,13 @@ export default function ContactsPage() {
 
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
-        throw new Error(data.error ?? "Kunde inte skapa kontakt");
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte skapa kontakt" : "Could not create contact"));
       }
 
       event.currentTarget.reset();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Något gick fel");
+      setError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
       setSubmitting(false);
     }
@@ -89,26 +90,26 @@ export default function ContactsPage() {
   return (
     <div className="crm-section">
       <section className="crm-card">
-        <h2>Kontakter</h2>
+        <h2>{t("contactTitle")}</h2>
         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-          Koppla kontakter till kunder och bygg kommunikationen strukturerat.
+          {t("contactDesc")}
         </p>
       </section>
 
       <section className="crm-card">
-        <h3>Ny kontakt</h3>
+        <h3>{t("contactNew")}</h3>
         <form onSubmit={onSubmit} style={{ marginTop: "0.85rem" }}>
           <div className="crm-row">
-            <input className="crm-input" name="firstName" placeholder="Förnamn" required />
-            <input className="crm-input" name="lastName" placeholder="Efternamn" required />
-            <input className="crm-input" name="role" placeholder="Roll" />
+            <input className="crm-input" name="firstName" placeholder={t("firstName")} required />
+            <input className="crm-input" name="lastName" placeholder={t("lastName")} required />
+            <input className="crm-input" name="role" placeholder={t("role")} />
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <input className="crm-input" name="email" placeholder="E-post" type="email" />
-            <input className="crm-input" name="phone" placeholder="Telefon" />
+            <input className="crm-input" name="email" placeholder={t("email")} type="email" />
+            <input className="crm-input" name="phone" placeholder={t("phone")} />
             <select className="crm-select" name="customerId" required defaultValue="">
               <option value="" disabled>
-                Välj kund
+                {t("chooseCustomer")}
               </option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
@@ -118,16 +119,16 @@ export default function ContactsPage() {
             </select>
           </div>
           <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={submitting}>
-            {submitting ? "Sparar..." : "Spara kontakt"}
+            {submitting ? t("saving") : t("saveContact")}
           </button>
         </form>
       </section>
 
       <section className="crm-card">
-        <h3>Lista</h3>
+        <h3>{t("list")}</h3>
         {error ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.5rem" }}>{error}</p> : null}
-        {loading ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>Laddar...</p> : null}
-        {!loading && contacts.length === 0 ? <p className="crm-empty">Inga kontakter ännu.</p> : null}
+        {loading ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{t("loading")}</p> : null}
+        {!loading && contacts.length === 0 ? <p className="crm-empty">{t("noContacts")}</p> : null}
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {contacts.map((contact) => (
             <article key={contact.id} className="crm-item">
@@ -136,7 +137,7 @@ export default function ContactsPage() {
                 <span className="crm-badge">{contact.customer.name}</span>
               </div>
               <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                {contact.role ?? "Ingen roll"}
+                {contact.role ?? t("noRole")}
               </p>
               <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
                 {contact.email ?? "-"} {contact.phone ? ` · ${contact.phone}` : ""}

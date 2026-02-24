@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useI18n } from "@/components/i18n";
 
 type CustomerRef = { id: string; name: string };
 
@@ -20,19 +21,23 @@ const statusClass: Record<Plan["status"], string> = {
   COMPLETED: "completed"
 };
 
-const statusLabel: Record<Plan["status"], string> = {
-  PLANNED: "Planerad",
-  IN_PROGRESS: "Pågående",
-  ON_HOLD: "Pausad",
-  COMPLETED: "Klar"
-};
-
 export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [customers, setCustomers] = useState<CustomerRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t, lang } = useI18n();
+
+  const labels = useMemo(
+    () => ({
+      PLANNED: t("statusPlanned"),
+      IN_PROGRESS: t("statusInProgress"),
+      ON_HOLD: t("statusOnHold"),
+      COMPLETED: t("statusCompleted")
+    }),
+    [t]
+  );
 
   async function load() {
     setLoading(true);
@@ -45,13 +50,13 @@ export default function PlansPage() {
       ]);
 
       if (!plansRes.ok || !customersRes.ok) {
-        throw new Error("Kunde inte hämta data");
+        throw new Error(lang === "sv" ? "Kunde inte hämta data" : "Could not fetch data");
       }
 
       setPlans((await plansRes.json()) as Plan[]);
       setCustomers((await customersRes.json()) as CustomerRef[]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Något gick fel");
+      setError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -59,7 +64,7 @@ export default function PlansPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [lang]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -83,13 +88,13 @@ export default function PlansPage() {
 
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
-        throw new Error(data.error ?? "Kunde inte skapa plan");
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte skapa plan" : "Could not create plan"));
       }
 
       event.currentTarget.reset();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Något gick fel");
+      setError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
       setSubmitting(false);
     }
@@ -98,29 +103,29 @@ export default function PlansPage() {
   return (
     <div className="crm-section">
       <section className="crm-card">
-        <h2>Planer / Projekt</h2>
+        <h2>{t("planTitle")}</h2>
         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-          Hantera kundplaner med status, ansvarig och framtida statistik-integration via API.
+          {t("planDesc")}
         </p>
       </section>
 
       <section className="crm-card">
-        <h3>Ny plan</h3>
+        <h3>{t("planNew")}</h3>
         <form onSubmit={onSubmit} style={{ marginTop: "0.85rem" }}>
           <div className="crm-row">
-            <input className="crm-input" name="title" placeholder="Titel" required />
-            <input className="crm-input" name="owner" placeholder="Ansvarig" />
+            <input className="crm-input" name="title" placeholder={t("title")} required />
+            <input className="crm-input" name="owner" placeholder={t("owner")} />
             <select className="crm-select" name="status" defaultValue="PLANNED">
-              <option value="PLANNED">Planerad</option>
-              <option value="IN_PROGRESS">Pågående</option>
-              <option value="ON_HOLD">Pausad</option>
-              <option value="COMPLETED">Klar</option>
+              <option value="PLANNED">{labels.PLANNED}</option>
+              <option value="IN_PROGRESS">{labels.IN_PROGRESS}</option>
+              <option value="ON_HOLD">{labels.ON_HOLD}</option>
+              <option value="COMPLETED">{labels.COMPLETED}</option>
             </select>
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
             <select className="crm-select" name="customerId" required defaultValue="">
               <option value="" disabled>
-                Välj kund
+                {t("chooseCustomer")}
               </option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
@@ -130,25 +135,25 @@ export default function PlansPage() {
             </select>
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <textarea className="crm-textarea" name="description" placeholder="Beskrivning" />
+            <textarea className="crm-textarea" name="description" placeholder={t("description")} />
           </div>
           <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={submitting}>
-            {submitting ? "Sparar..." : "Spara plan"}
+            {submitting ? t("saving") : t("savePlan")}
           </button>
         </form>
       </section>
 
       <section className="crm-card">
-        <h3>Lista</h3>
+        <h3>{t("list")}</h3>
         {error ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.5rem" }}>{error}</p> : null}
-        {loading ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>Laddar...</p> : null}
-        {!loading && plans.length === 0 ? <p className="crm-empty">Inga planer ännu.</p> : null}
+        {loading ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{t("loading")}</p> : null}
+        {!loading && plans.length === 0 ? <p className="crm-empty">{t("noPlans")}</p> : null}
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {plans.map((plan) => (
             <article key={plan.id} className="crm-item">
               <div className="crm-item-head">
                 <strong>{plan.title}</strong>
-                <span className={`crm-badge ${statusClass[plan.status]}`}>{statusLabel[plan.status]}</span>
+                <span className={`crm-badge ${statusClass[plan.status]}`}>{labels[plan.status]}</span>
               </div>
               <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
                 {plan.customer.name}

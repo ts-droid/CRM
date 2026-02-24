@@ -1,5 +1,8 @@
 "use client";
 
+import { FormEvent, useEffect, useState } from "react";
+import { useI18n } from "@/components/i18n";
+
 type Customer = {
   id: string;
   name: string;
@@ -10,13 +13,12 @@ type Customer = {
   createdAt: string;
 };
 
-import { FormEvent, useEffect, useState } from "react";
-
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t, lang } = useI18n();
 
   async function loadCustomers() {
     setLoading(true);
@@ -24,11 +26,11 @@ export default function CustomersPage() {
 
     try {
       const res = await fetch("/api/customers", { cache: "no-store" });
-      if (!res.ok) throw new Error("Kunde inte hämta kunder");
+      if (!res.ok) throw new Error(lang === "sv" ? "Kunde inte hämta kunder" : "Could not fetch customers");
       const data = (await res.json()) as Customer[];
       setCustomers(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Något gick fel");
+      setError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -36,7 +38,7 @@ export default function CustomersPage() {
 
   useEffect(() => {
     loadCustomers();
-  }, []);
+  }, [lang]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,13 +62,13 @@ export default function CustomersPage() {
 
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
-        throw new Error(data.error ?? "Kunde inte skapa kund");
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte skapa kund" : "Could not create customer"));
       }
 
       event.currentTarget.reset();
       await loadCustomers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Något gick fel");
+      setError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
       setSubmitting(false);
     }
@@ -75,44 +77,44 @@ export default function CustomersPage() {
   return (
     <div className="crm-section">
       <section className="crm-card">
-        <h2>Kunder</h2>
+        <h2>{t("customerTitle")}</h2>
         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-          Lägg till kunder och grunddata för framtida CRM- och försäljningskoppling.
+          {t("customerDesc")}
         </p>
       </section>
 
       <section className="crm-card">
-        <h3>Ny kund</h3>
+        <h3>{t("customerNew")}</h3>
         <form onSubmit={onSubmit} style={{ marginTop: "0.85rem" }}>
           <div className="crm-row">
-            <input className="crm-input" name="name" placeholder="Namn" required minLength={2} />
-            <input className="crm-input" name="organization" placeholder="Organisation" />
+            <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
+            <input className="crm-input" name="organization" placeholder={t("organization")} />
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <input className="crm-input" name="industry" placeholder="Bransch" />
-            <input className="crm-input" name="email" placeholder="E-post" type="email" />
-            <input className="crm-input" name="phone" placeholder="Telefon" />
+            <input className="crm-input" name="industry" placeholder={t("industry")} />
+            <input className="crm-input" name="email" placeholder={t("email")} type="email" />
+            <input className="crm-input" name="phone" placeholder={t("phone")} />
           </div>
           <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={submitting}>
-            {submitting ? "Sparar..." : "Spara kund"}
+            {submitting ? t("saving") : t("saveCustomer")}
           </button>
         </form>
       </section>
 
       <section className="crm-card">
-        <h3>Lista</h3>
+        <h3>{t("list")}</h3>
         {error ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.5rem" }}>{error}</p> : null}
-        {loading ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>Laddar...</p> : null}
-        {!loading && customers.length === 0 ? <p className="crm-empty">Inga kunder ännu.</p> : null}
+        {loading ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{t("loading")}</p> : null}
+        {!loading && customers.length === 0 ? <p className="crm-empty">{t("noCustomers")}</p> : null}
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {customers.map((customer) => (
             <article key={customer.id} className="crm-item">
               <div className="crm-item-head">
                 <strong>{customer.name}</strong>
-                <span className="crm-badge">{new Date(customer.createdAt).toLocaleDateString("sv-SE")}</span>
+                <span className="crm-badge">{new Date(customer.createdAt).toLocaleDateString(lang === "sv" ? "sv-SE" : "en-GB")}</span>
               </div>
               <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                {customer.organization ?? "Ingen organisation"}
+                {customer.organization ?? t("noOrganization")}
                 {customer.industry ? ` · ${customer.industry}` : ""}
               </p>
               <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
