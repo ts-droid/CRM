@@ -56,6 +56,16 @@ npm run dev
 - `Plan` (kopplad till `Customer`)
 - `PlanStatus` enum
 
+## Nya backend-endpoints (research/AI)
+
+- `POST /api/research`
+  - Tar emot `customerId` eller `companyName` + valfria `websites`.
+  - Hämtar webbdata från flera sidor, hittar liknande kunder, och returnerar en färdig AI-prompt.
+- `GET /api/customers/:id/similar?scope=region|country`
+  - Returnerar rankade liknande kunder.
+- `POST /api/customers/:id/sync-webshop`
+  - Hämtar data från kundens webbplats och uppdaterar `webshopSignals` + `potentialScore`.
+
 ## Nästa steg
 
 - Lägg till autentisering (NextAuth eller Clerk)

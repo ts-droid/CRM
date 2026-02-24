@@ -37,6 +37,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const { lang } = useI18n();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [similar, setSimilar] = useState<SimilarCustomer[]>([]);
+  const [aiPrompt, setAiPrompt] = useState<string>("");
   const [scope, setScope] = useState<"region" | "country">("region");
   const [status, setStatus] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -114,6 +115,28 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     await loadSimilar(scope);
   }
 
+  async function buildPrompt() {
+    setStatus(lang === "sv" ? "Bygger AI-prompt..." : "Building AI prompt...");
+
+    const res = await fetch("/api/research", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customerId: params.id,
+        scope
+      })
+    });
+
+    if (!res.ok) {
+      setStatus(lang === "sv" ? "Kunde inte skapa prompt" : "Could not build prompt");
+      return;
+    }
+
+    const data = (await res.json()) as { aiPrompt?: string };
+    setAiPrompt(data.aiPrompt ?? "");
+    setStatus(lang === "sv" ? "AI-prompt klar" : "AI prompt ready");
+  }
+
   if (loading) {
     return <section className="crm-card">{lang === "sv" ? "Laddar kundkort..." : "Loading customer profile..."}</section>;
   }
@@ -170,6 +193,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <button className="crm-button crm-button-secondary" type="button" onClick={syncWebshop}>
               {lang === "sv" ? "Synka webshop" : "Sync webshop"}
             </button>
+            <button className="crm-button crm-button-secondary" type="button" onClick={buildPrompt}>
+              {lang === "sv" ? "Skapa AI-prompt" : "Build AI prompt"}
+            </button>
           </div>
           {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
         </form>
@@ -223,6 +249,13 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
             {lang === "sv" ? "Senast synk" : "Last synced"}: {customer.webshopSignals.syncedAt ?? "-"}
           </p>
+        </section>
+      ) : null}
+
+      {aiPrompt ? (
+        <section className="crm-card">
+          <h3>{lang === "sv" ? "AI-prompt för analys" : "AI prompt for analysis"}</h3>
+          <pre className="crm-pre">{aiPrompt}</pre>
         </section>
       ) : null}
     </div>
