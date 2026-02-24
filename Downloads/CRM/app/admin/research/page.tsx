@@ -23,13 +23,21 @@ type ResearchConfig = {
   brandWebsites: string[];
   extraInstructions: string;
   defaultScope: "region" | "country";
+  industries: string[];
+  countries: string[];
+  sellers: string[];
+  requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
 };
 
 const EMPTY_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://www.vendora.se"],
   brandWebsites: [],
   extraInstructions: "",
-  defaultScope: "region"
+  defaultScope: "region",
+  industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
+  countries: ["SE", "NO", "DK", "FI"],
+  sellers: ["Team Nordics"],
+  requiredCustomerFields: ["name", "industry", "country", "seller"]
 };
 
 export default function ResearchAdminPage() {
@@ -157,7 +165,22 @@ export default function ResearchAdminPage() {
         .map((line) => line.trim())
         .filter(Boolean),
       extraInstructions: String(form.get("extraInstructions") ?? "").trim(),
-      defaultScope: String(form.get("defaultScope") ?? "region") === "country" ? "country" : "region"
+      defaultScope: String(form.get("defaultScope") ?? "region") === "country" ? "country" : "region",
+      industries: String(form.get("industries") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+      countries: String(form.get("countries") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+      sellers: String(form.get("sellers") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+      requiredCustomerFields: (form.getAll("requiredCustomerFields") as string[]).filter(Boolean) as Array<
+        "name" | "industry" | "country" | "seller"
+      >
     };
 
     try {
@@ -317,6 +340,51 @@ export default function ResearchAdminPage() {
                 defaultValue={config.brandWebsites.join("\n")}
                 placeholder={lang === "sv" ? "Brand-webbsidor, en URL per rad" : "Brand websites, one URL per line"}
               />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                name="industries"
+                defaultValue={config.industries.join("\n")}
+                placeholder={lang === "sv" ? "Branscher, en per rad" : "Industries, one per line"}
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                name="countries"
+                defaultValue={config.countries.join("\n")}
+                placeholder={lang === "sv" ? "Länder (t.ex. SE), en per rad" : "Countries (e.g. SE), one per line"}
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                name="sellers"
+                defaultValue={config.sellers.join("\n")}
+                placeholder={lang === "sv" ? "Säljare, en per rad" : "Sellers, one per line"}
+              />
+            </div>
+            <div style={{ marginTop: "0.6rem" }}>
+              <p className="crm-subtle">{lang === "sv" ? "Obligatoriska kundfält" : "Required customer fields"}</p>
+              <div className="crm-row" style={{ marginTop: "0.4rem" }}>
+                <label className="crm-check">
+                  <input type="checkbox" name="requiredCustomerFields" value="name" defaultChecked={config.requiredCustomerFields.includes("name")} />
+                  <span>Name</span>
+                </label>
+                <label className="crm-check">
+                  <input type="checkbox" name="requiredCustomerFields" value="industry" defaultChecked={config.requiredCustomerFields.includes("industry")} />
+                  <span>Industry</span>
+                </label>
+                <label className="crm-check">
+                  <input type="checkbox" name="requiredCustomerFields" value="country" defaultChecked={config.requiredCustomerFields.includes("country")} />
+                  <span>Country</span>
+                </label>
+                <label className="crm-check">
+                  <input type="checkbox" name="requiredCustomerFields" value="seller" defaultChecked={config.requiredCustomerFields.includes("seller")} />
+                  <span>Seller</span>
+                </label>
+              </div>
             </div>
             <div className="crm-row" style={{ marginTop: "0.6rem" }}>
               <textarea

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/components/i18n";
 
 type Customer = {
@@ -18,6 +18,20 @@ type Customer = {
   createdAt: string;
 };
 
+type FormConfig = {
+  industries: string[];
+  countries: string[];
+  sellers: string[];
+  requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
+};
+
+const DEFAULT_CONFIG: FormConfig = {
+  industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
+  countries: ["SE", "NO", "DK", "FI"],
+  sellers: ["Team Nordics"],
+  requiredCustomerFields: ["name", "industry", "country", "seller"]
+};
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +39,29 @@ export default function CustomersPage() {
   const [error, setError] = useState<string | null>(null);
   const [countryFilter, setCountryFilter] = useState("");
   const [sellerFilter, setSellerFilter] = useState("");
+  const [potentialScore, setPotentialScore] = useState(50);
+  const [config, setConfig] = useState<FormConfig>(DEFAULT_CONFIG);
   const { t, lang } = useI18n();
+
+  const required = useMemo(() => {
+    const requiredSet = new Set(config.requiredCustomerFields);
+    return {
+      industry: requiredSet.has("industry"),
+      country: requiredSet.has("country"),
+      seller: requiredSet.has("seller")
+    };
+  }, [config.requiredCustomerFields]);
+
+  async function loadSettings() {
+    try {
+      const res = await fetch("/api/admin/settings", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { config?: FormConfig };
+      if (data.config) setConfig(data.config);
+    } catch {
+      // ignore
+    }
+  }
 
   async function loadCustomers() {
     setLoading(true);
@@ -47,6 +83,10 @@ export default function CustomersPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
 
   useEffect(() => {
     loadCustomers();
@@ -73,7 +113,7 @@ export default function CustomersPage() {
           website: form.get("website"),
           email: form.get("email"),
           phone: form.get("phone"),
-          potentialScore: Number(form.get("potentialScore") || 50)
+          potentialScore
         })
       });
 
@@ -83,6 +123,7 @@ export default function CustomersPage() {
       }
 
       event.currentTarget.reset();
+      setPotentialScore(50);
       await loadCustomers();
     } catch (err) {
       setError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
@@ -97,39 +138,67 @@ export default function CustomersPage() {
         <h2>{t("customerTitle")}</h2>
         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
           {lang === "sv"
-            ? "Lägg till kunder med land, säljare och potentialscore för tydlig prioritering."
-            : "Add customers with country, seller and potential score for clear prioritization."}
+            ? "Standardiserad kundinmatning med dropdowns för land, bransch och säljare."
+            : "Standardized customer intake with dropdowns for country, industry and seller."}
         </p>
       </section>
 
       <section className="crm-card">
         <h3>{t("customerNew")}</h3>
+        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+          {lang === "sv"
+            ? "Name: kundnamn. Organization: juridiskt bolag. Industry/Country/Seller: välj från listor i Admin > Settings."
+            : "Name: account name. Organization: legal entity. Industry/Country/Seller: choose from Admin > Settings lists."}
+        </p>
+
         <form onSubmit={onSubmit} style={{ marginTop: "0.85rem" }}>
           <div className="crm-row">
             <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
             <input className="crm-input" name="organization" placeholder={t("organization")} />
-            <input className="crm-input" name="industry" placeholder={t("industry")} />
+            <select className="crm-select" name="industry" required={required.industry} defaultValue="">
+              <option value="" disabled>{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
+              {config.industries.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <input className="crm-input" name="country" placeholder={lang === "sv" ? "Land" : "Country"} />
-            <input className="crm-input" name="region" placeholder={lang === "sv" ? "Region" : "Region"} />
-            <input className="crm-input" name="seller" placeholder={lang === "sv" ? "Säljare" : "Seller"} />
+            <select className="crm-select" name="country" required={required.country} defaultValue="">
+              <option value="" disabled>{lang === "sv" ? "Välj land" : "Select country"}</option>
+              {config.countries.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+            <input className="crm-input" name="region" placeholder={lang === "sv" ? "Region (t.ex. Stockholm)" : "Region (e.g. Stockholm)"} />
+            <select className="crm-select" name="seller" required={required.seller} defaultValue="">
+              <option value="" disabled>{lang === "sv" ? "Välj säljare" : "Select seller"}</option>
+              {config.sellers.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <input className="crm-input" name="website" placeholder={lang === "sv" ? "Webbsida" : "Website"} />
+            <input className="crm-input" name="website" placeholder={lang === "sv" ? "Webbsida (https://...)" : "Website (https://...)"} />
             <input className="crm-input" name="email" placeholder={t("email")} type="email" />
             <input className="crm-input" name="phone" placeholder={t("phone")} />
           </div>
-          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+          <div style={{ marginTop: "0.6rem" }}>
+            <label className="crm-subtle" htmlFor="potentialRange">
+              {lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}: {potentialScore}
+            </label>
             <input
+              id="potentialRange"
               className="crm-input"
-              type="number"
+              type="range"
               min={0}
               max={100}
-              name="potentialScore"
-              placeholder={lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}
-              defaultValue={50}
+              step={1}
+              value={potentialScore}
+              onChange={(event) => setPotentialScore(Number(event.target.value))}
             />
+            <p className="crm-subtle" style={{ marginTop: "0.25rem" }}>
+              {lang === "sv" ? "0-30 låg, 31-60 medel, 61-80 hög, 81-100 strategisk." : "0-30 low, 31-60 medium, 61-80 high, 81-100 strategic."}
+            </p>
           </div>
           <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={submitting}>
             {submitting ? t("saving") : t("saveCustomer")}
