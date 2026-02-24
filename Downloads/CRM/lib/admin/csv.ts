@@ -1,6 +1,11 @@
 export type CsvRow = Record<string, string>;
 
 export function parseCsv(input: string): CsvRow[] {
+  const firstLine = input.split(/\r?\n/, 1)[0] ?? "";
+  const commaCount = (firstLine.match(/,/g) ?? []).length;
+  const semicolonCount = (firstLine.match(/;/g) ?? []).length;
+  const delimiter = semicolonCount > commaCount ? ";" : ",";
+
   const rows: string[][] = [];
   let current = "";
   let row: string[] = [];
@@ -20,7 +25,7 @@ export function parseCsv(input: string): CsvRow[] {
       continue;
     }
 
-    if (char === "," && !inQuotes) {
+    if (char === delimiter && !inQuotes) {
       row.push(current);
       current = "";
       continue;
