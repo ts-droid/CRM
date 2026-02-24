@@ -65,6 +65,12 @@ npm run dev
   - Returnerar rankade liknande kunder.
 - `POST /api/customers/:id/sync-webshop`
   - Hämtar data från kundens webbplats och uppdaterar `webshopSignals` + `potentialScore`.
+- `GET|PUT /api/admin/settings`
+  - Hämtar/sparar research-inställningar (vendor-/brand-webbsidor, default scope, extra AI-instruktioner).
+- `GET /api/admin/csv/export`
+  - Exporterar kunder till CSV.
+- `POST /api/admin/csv/import`
+  - Importerar kunder från CSV (uppdaterar om `id` finns, annars skapar).
 
 ## Nästa steg
 

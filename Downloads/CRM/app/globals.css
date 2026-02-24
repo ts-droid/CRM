@@ -272,6 +272,21 @@ a {
   font-weight: 600;
 }
 
+.crm-tab {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink-muted);
+  border-radius: 12px;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.crm-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .crm-pre {
   margin: 0.75rem 0 0;
   border: 1px solid var(--line);

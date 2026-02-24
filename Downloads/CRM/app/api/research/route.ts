@@ -4,6 +4,7 @@ import { buildResearchPrompt } from "@/lib/research/prompt";
 import { rankSimilarCustomers } from "@/lib/research/similarity";
 import { fetchWebsiteSnapshot, normalizeUrl } from "@/lib/research/web";
 import { generateWithGemini } from "@/lib/research/llm";
+import { getResearchConfig } from "@/lib/admin/settings";
 
 type Payload = {
   customerId?: string;
@@ -20,7 +21,8 @@ type Payload = {
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Payload;
-    const scope = body.scope === "country" ? "country" : "region";
+    const settings = await getResearchConfig();
+    const scope = body.scope === "country" ? "country" : body.scope === "region" ? "region" : settings.defaultScope;
     const maxSimilar = Math.max(1, Math.min(20, body.maxSimilar ?? 10));
 
     let baseCustomer = null as null | {
@@ -68,6 +70,11 @@ export async function POST(req: Request) {
 
     const urlSet = new Set<string>();
     if (baseCustomer?.website) urlSet.add(normalizeUrl(baseCustomer.website));
+    for (const website of [...settings.vendorWebsites, ...settings.brandWebsites]) {
+      if (website?.trim()) {
+        urlSet.add(normalizeUrl(website));
+      }
+    }
     for (const website of body.websites ?? []) {
       if (website?.trim()) {
         urlSet.add(normalizeUrl(website));
@@ -128,11 +135,15 @@ export async function POST(req: Request) {
       similarCustomers
     });
 
+    const finalPrompt = settings.extraInstructions
+      ? `${aiPrompt}\n\nAdditional internal instructions:\n${settings.extraInstructions}`
+      : aiPrompt;
+
     let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
     let aiError: string | null = null;
 
     try {
-      aiResult = await generateWithGemini(aiPrompt);
+      aiResult = await generateWithGemini(finalPrompt);
     } catch (error) {
       aiError = error instanceof Error ? error.message : "Gemini request failed";
     }
@@ -149,7 +160,7 @@ export async function POST(req: Request) {
       },
       websiteSnapshots,
       similarCustomers,
-      aiPrompt,
+      aiPrompt: finalPrompt,
       aiResult,
       aiError
     });
