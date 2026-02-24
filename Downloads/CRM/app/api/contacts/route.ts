@@ -17,29 +17,44 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
+      name?: string;
       firstName?: string;
       lastName?: string;
       email?: string;
       phone?: string;
+      department?: string;
+      title?: string;
       role?: string;
       notes?: string;
       customerId?: string;
     };
 
-    if (!body.firstName || !body.lastName || !body.customerId) {
+    const normalizedName = body.name?.trim();
+    const nameParts = normalizedName ? normalizedName.split(/\s+/).filter(Boolean) : [];
+    const inferredFirstName = nameParts[0];
+    const inferredLastName = nameParts.slice(1).join(" ");
+
+    const firstName = body.firstName?.trim() || inferredFirstName;
+    const lastName = body.lastName?.trim() || inferredLastName || "-";
+
+    if (!firstName || !body.customerId) {
       return NextResponse.json(
-        { error: "firstName, lastName and customerId are required" },
+        { error: "name/firstName and customerId are required" },
         { status: 400 }
       );
     }
 
+    const title = body.title?.trim() || body.role?.trim() || null;
+
     const created = await prisma.contact.create({
       data: {
-        firstName: body.firstName,
-        lastName: body.lastName,
+        firstName,
+        lastName,
         email: body.email,
         phone: body.phone,
-        role: body.role,
+        department: body.department,
+        title,
+        role: title,
         notes: body.notes,
         customerId: body.customerId
       }

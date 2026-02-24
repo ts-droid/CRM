@@ -31,9 +31,11 @@ type Customer = {
     id: string;
     firstName: string;
     lastName: string;
-    role: string | null;
+    department: string | null;
+    title: string | null;
     email: string | null;
     phone: string | null;
+    notes: string | null;
   }>;
   plans: Array<{
     id: string;
@@ -48,6 +50,28 @@ type Customer = {
   } | null;
 };
 
+type ContactDraft = {
+  key: string;
+  name: string;
+  email: string;
+  phone: string;
+  department: string;
+  title: string;
+  notes: string;
+};
+
+function emptyContactDraft(): ContactDraft {
+  return {
+    key: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    name: "",
+    email: "",
+    phone: "",
+    department: "",
+    title: "",
+    notes: ""
+  };
+}
+
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const { lang } = useI18n();
   const searchParams = useSearchParams();
@@ -56,6 +80,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [aiPrompt, setAiPrompt] = useState<string>("");
   const [scope, setScope] = useState<"region" | "country">("region");
   const [status, setStatus] = useState<string>("");
+  const [contactStatus, setContactStatus] = useState<string>("");
+  const [contactsSaving, setContactsSaving] = useState(false);
+  const [newContacts, setNewContacts] = useState<ContactDraft[]>([emptyContactDraft()]);
   const [loading, setLoading] = useState(true);
 
   async function loadCustomer() {
@@ -117,8 +144,6 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         region: form.get("region"),
         seller: form.get("seller"),
         website: form.get("website"),
-        email: form.get("email"),
-        phone: form.get("phone"),
         notes: form.get("notes"),
         potentialScore: Number(form.get("potentialScore") || 50)
       })
@@ -131,6 +156,80 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
     setStatus(lang === "sv" ? "Sparat" : "Saved");
     await loadCustomer();
+  }
+
+  async function runSimilarSearch() {
+    setStatus(lang === "sv" ? "Söker liknande kunder..." : "Searching similar customers...");
+    await loadSimilar(scope);
+    setStatus(lang === "sv" ? "Liknande kunder uppdaterade." : "Similar customers updated.");
+
+    const section = document.getElementById("similar-customers");
+    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function updateNewContact(index: number, field: keyof Omit<ContactDraft, "key">, value: string) {
+    setNewContacts((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+        return { ...item, [field]: value };
+      })
+    );
+  }
+
+  function addContactDraft() {
+    setNewContacts((prev) => [...prev, emptyContactDraft()]);
+  }
+
+  async function saveContacts() {
+    setContactsSaving(true);
+    setContactStatus("");
+
+    const contactsToCreate = newContacts.filter(
+      (item) =>
+        item.name.trim() ||
+        item.email.trim() ||
+        item.phone.trim() ||
+        item.department.trim() ||
+        item.title.trim() ||
+        item.notes.trim()
+    );
+
+    if (contactsToCreate.length === 0) {
+      setContactStatus(lang === "sv" ? "Fyll i minst en kontakt." : "Enter at least one contact.");
+      setContactsSaving(false);
+      return;
+    }
+
+    try {
+      for (const item of contactsToCreate) {
+        const response = await fetch("/api/contacts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerId: params.id,
+            name: item.name,
+            email: item.email || undefined,
+            phone: item.phone || undefined,
+            department: item.department || undefined,
+            title: item.title || undefined,
+            notes: item.notes || undefined
+          })
+        });
+
+        if (!response.ok) {
+          const data = (await response.json()) as { error?: string };
+          throw new Error(data.error ?? (lang === "sv" ? "Kunde inte spara kontakt" : "Could not save contact"));
+        }
+      }
+
+      setContactStatus(lang === "sv" ? "Kontakter sparade." : "Contacts saved.");
+      setNewContacts([emptyContactDraft()]);
+      await loadCustomer();
+    } catch (error) {
+      setContactStatus(error instanceof Error ? error.message : lang === "sv" ? "Något gick fel." : "Something went wrong.");
+    } finally {
+      setContactsSaving(false);
+    }
   }
 
   async function syncWebshop() {
@@ -216,8 +315,6 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
             <input className="crm-input" name="website" defaultValue={customer.website ?? ""} placeholder={lang === "sv" ? "Webbsida" : "Website"} />
-            <input className="crm-input" name="email" defaultValue={customer.email ?? ""} placeholder={lang === "sv" ? "E-post" : "Email"} />
-            <input className="crm-input" name="phone" defaultValue={customer.phone ?? ""} placeholder={lang === "sv" ? "Telefon" : "Phone"} />
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
             <input
@@ -237,6 +334,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <button className="crm-button" type="submit">{lang === "sv" ? "Spara" : "Save"}</button>
             <button className="crm-button crm-button-secondary" type="button" onClick={syncWebshop}>
               {lang === "sv" ? "Synka webshop" : "Sync webshop"}
+            </button>
+            <button className="crm-button crm-button-secondary" type="button" onClick={runSimilarSearch}>
+              {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
             </button>
             <button className="crm-button crm-button-secondary" type="button" onClick={buildPrompt}>
               {lang === "sv" ? "Skapa AI-prompt" : "Build AI prompt"}
@@ -283,7 +383,17 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       </section>
 
       <section className="crm-card">
-        <h3>{lang === "sv" ? "Kontakter" : "Contacts"}</h3>
+        <div className="crm-item-head">
+          <h3>{lang === "sv" ? "Kontakter" : "Contacts"}</h3>
+          <button className="crm-button crm-button-secondary" type="button" onClick={addContactDraft}>
+            + {lang === "sv" ? "Lägg till kontakt" : "Add contact"}
+          </button>
+        </div>
+        <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+          {lang === "sv"
+            ? "Kontaktkort: Namn, E-post, Telefon, Avdelning, Befattning och Noteringar."
+            : "Contact card: Name, Email, Phone, Department, Title and Notes."}
+        </p>
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {customer.contacts.length === 0 ? (
             <p className="crm-empty">{lang === "sv" ? "Inga kontakter registrerade." : "No contacts registered."}</p>
@@ -292,15 +402,78 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               <article key={contact.id} className="crm-item">
                 <div className="crm-item-head">
                   <strong>{contact.firstName} {contact.lastName}</strong>
-                  <span className="crm-badge">{contact.role ?? "-"}</span>
+                  <span className="crm-badge">{contact.title ?? "-"}</span>
                 </div>
                 <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
                   {contact.email ?? "-"} {contact.phone ? ` · ${contact.phone}` : ""}
+                </p>
+                <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                  {(lang === "sv" ? "Avdelning" : "Department") + ": " + (contact.department ?? "-")}
+                </p>
+                <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                  {(lang === "sv" ? "Noteringar" : "Notes") + ": " + (contact.notes ?? "-")}
                 </p>
               </article>
             ))
           )}
         </div>
+        <div className="crm-list" style={{ marginTop: "0.9rem" }}>
+          {newContacts.map((draft, index) => (
+            <article key={draft.key} className="crm-item">
+              <div className="crm-item-head">
+                <strong>{lang === "sv" ? "Ny kontakt" : "New contact"} #{index + 1}</strong>
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.5rem" }}>
+                <input
+                  className="crm-input"
+                  value={draft.name}
+                  onChange={(event) => updateNewContact(index, "name", event.target.value)}
+                  placeholder={lang === "sv" ? "Namn" : "Name"}
+                />
+                <input
+                  className="crm-input"
+                  value={draft.email}
+                  onChange={(event) => updateNewContact(index, "email", event.target.value)}
+                  placeholder={lang === "sv" ? "E-post" : "Email"}
+                />
+                <input
+                  className="crm-input"
+                  value={draft.phone}
+                  onChange={(event) => updateNewContact(index, "phone", event.target.value)}
+                  placeholder={lang === "sv" ? "Telefon" : "Phone"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  value={draft.department}
+                  onChange={(event) => updateNewContact(index, "department", event.target.value)}
+                  placeholder={lang === "sv" ? "Avdelning" : "Department"}
+                />
+                <input
+                  className="crm-input"
+                  value={draft.title}
+                  onChange={(event) => updateNewContact(index, "title", event.target.value)}
+                  placeholder={lang === "sv" ? "Befattning" : "Title"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  value={draft.notes}
+                  onChange={(event) => updateNewContact(index, "notes", event.target.value)}
+                  placeholder={lang === "sv" ? "Noteringar" : "Notes"}
+                />
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="crm-row" style={{ marginTop: "0.7rem" }}>
+          <button className="crm-button" type="button" disabled={contactsSaving} onClick={saveContacts}>
+            {contactsSaving ? (lang === "sv" ? "Sparar..." : "Saving...") : (lang === "sv" ? "Spara kontakter" : "Save contacts")}
+          </button>
+        </div>
+        {contactStatus ? <p className="crm-subtle" style={{ marginTop: "0.55rem" }}>{contactStatus}</p> : null}
       </section>
 
       <section className="crm-card">

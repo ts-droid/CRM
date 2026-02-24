@@ -227,6 +227,21 @@ a {
   padding: 0.85rem;
 }
 
+.crm-item-link {
+  display: block;
+}
+
+.crm-item-link .crm-item {
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.crm-item-link:hover .crm-item,
+.crm-item-link:focus-visible .crm-item {
+  border-color: rgba(223, 51, 20, 0.55);
+  box-shadow: 0 8px 20px rgba(223, 51, 20, 0.12);
+  transform: translateY(-1px);
+}
+
 .crm-item-head {
   display: flex;
   justify-content: space-between;

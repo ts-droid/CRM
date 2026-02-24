@@ -127,27 +127,23 @@ export default function HomePage() {
 
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {rows.slice(0, 12).map((customer) => (
-            <article key={customer.id} className="crm-item">
-              <div className="crm-item-head">
-                <strong>{customer.name}</strong>
-                <span className="crm-badge">{lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}</span>
-              </div>
-              <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                {(customer.country ?? "-") + " · " + (customer.region ?? "-") + " · " + (customer.seller ?? "-")}
-                {customer.industry ? ` · ${customer.industry}` : ""}
-              </p>
-              <div className="crm-row" style={{ marginTop: "0.45rem" }}>
-                <Link href={`/customers/${customer.id}`} className="crm-link-inline">
-                  {lang === "sv" ? "Öppna kundkort" : "Open customer profile"}
-                </Link>
-                <Link
-                  href={`/customers/${customer.id}?autoSimilar=1&scope=${customer.region ? "region" : "country"}`}
-                  className="crm-link-inline"
-                >
-                  {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
-                </Link>
-              </div>
-            </article>
+            <Link
+              key={customer.id}
+              href={`/customers/${customer.id}`}
+              className="crm-item-link"
+              aria-label={(lang === "sv" ? "Öppna kundkort för " : "Open customer profile for ") + customer.name}
+            >
+              <article className="crm-item">
+                <div className="crm-item-head">
+                  <strong>{customer.name}</strong>
+                  <span className="crm-badge">{lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}</span>
+                </div>
+                <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                  {(customer.country ?? "-") + " · " + (customer.region ?? "-") + " · " + (customer.seller ?? "-")}
+                  {customer.industry ? ` · ${customer.industry}` : ""}
+                </p>
+              </article>
+            </Link>
           ))}
         </div>
       </section>

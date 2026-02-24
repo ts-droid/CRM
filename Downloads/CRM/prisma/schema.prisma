@@ -40,6 +40,8 @@ model Contact {
   lastName    String
   email       String?
   phone       String?
+  department  String?
+  title       String?
   role        String?
   notes       String?
   customerId  String
