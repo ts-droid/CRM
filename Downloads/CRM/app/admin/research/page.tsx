@@ -120,7 +120,8 @@ export default function ResearchAdminPage() {
     setCsvLoading(true);
     setCsvStatus("");
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
 
     try {
       const res = await fetch("/api/admin/csv/import", {
@@ -136,7 +137,7 @@ export default function ResearchAdminPage() {
           ? `Import klar. Skapade: ${data.created ?? 0}, uppdaterade: ${data.updated ?? 0}, rader: ${data.total ?? 0}`
           : `Import complete. Created: ${data.created ?? 0}, updated: ${data.updated ?? 0}, rows: ${data.total ?? 0}`
       );
-      (event.currentTarget as HTMLFormElement).reset();
+      formElement.reset();
     } catch (err) {
       setCsvStatus(err instanceof Error ? err.message : "Import failed");
     } finally {
