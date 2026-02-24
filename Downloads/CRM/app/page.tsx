@@ -18,10 +18,11 @@ type Stats = {
   contacts: number;
   plans: number;
   available: boolean;
+  reason?: string | null;
 };
 
 export default function HomePage() {
-  const [stats, setStats] = useState<Stats>({ customers: 0, contacts: 0, plans: 0, available: false });
+  const [stats, setStats] = useState<Stats>({ customers: 0, contacts: 0, plans: 0, available: false, reason: null });
   const [rows, setRows] = useState<Customer[]>([]);
   const [country, setCountry] = useState("");
   const [seller, setSeller] = useState("");
@@ -140,7 +141,10 @@ export default function HomePage() {
 
       {!stats.available ? (
         <section className="crm-card" style={{ marginTop: "1rem" }}>
-          <p className="crm-subtle">{t("dbMissing")}</p>
+          <p className="crm-subtle">
+            {t("dbMissing")}
+            {stats.reason ? ` (${stats.reason})` : ""}
+          </p>
         </section>
       ) : null}
     </>

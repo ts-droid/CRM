@@ -8,7 +8,8 @@ const LINKS = [
   { href: "/", key: "navOverview" },
   { href: "/customers", key: "navCustomers" },
   { href: "/contacts", key: "navContacts" },
-  { href: "/plans", key: "navPlans" }
+  { href: "/plans", key: "navPlans" },
+  { href: "/admin/research", key: "navAdmin" }
 ] as const;
 
 export function Nav() {

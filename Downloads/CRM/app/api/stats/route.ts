@@ -3,7 +3,13 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   if (!process.env.DATABASE_URL) {
-    return NextResponse.json({ customers: 0, contacts: 0, plans: 0, available: false });
+    return NextResponse.json({
+      customers: 0,
+      contacts: 0,
+      plans: 0,
+      available: false,
+      reason: "DATABASE_URL is missing"
+    });
   }
 
   try {
@@ -13,8 +19,14 @@ export async function GET() {
       prisma.plan.count()
     ]);
 
-    return NextResponse.json({ customers, contacts, plans, available: true });
-  } catch {
-    return NextResponse.json({ customers: 0, contacts: 0, plans: 0, available: false });
+    return NextResponse.json({ customers, contacts, plans, available: true, reason: null });
+  } catch (error) {
+    return NextResponse.json({
+      customers: 0,
+      contacts: 0,
+      plans: 0,
+      available: false,
+      reason: error instanceof Error ? error.message : "Unknown database error"
+    });
   }
 }
