@@ -8,6 +8,7 @@ type Customer = {
   id: string;
   name: string;
   country: string | null;
+  region: string | null;
   seller: string | null;
   industry: string | null;
   potentialScore: number;
@@ -26,6 +27,7 @@ export default function HomePage() {
   const [rows, setRows] = useState<Customer[]>([]);
   const [country, setCountry] = useState("");
   const [seller, setSeller] = useState("");
+  const [sort, setSort] = useState("potential");
   const { t, lang } = useI18n();
 
   async function loadStats() {
@@ -40,7 +42,7 @@ export default function HomePage() {
 
   async function loadCustomers() {
     const params = new URLSearchParams();
-    params.set("sort", "potential");
+    params.set("sort", sort);
     if (country) params.set("country", country);
     if (seller) params.set("seller", seller);
 
@@ -56,7 +58,7 @@ export default function HomePage() {
 
   useEffect(() => {
     loadCustomers();
-  }, [country, seller]);
+  }, [country, seller, sort]);
 
   const countries = useMemo(() => {
     return Array.from(new Set(rows.map((row) => row.country).filter(Boolean))).sort() as string[];
@@ -95,7 +97,12 @@ export default function HomePage() {
       <section className="crm-card" style={{ marginTop: "1rem" }}>
         <div className="crm-item-head">
           <h3>{lang === "sv" ? "Prioriterad kundlista" : "Prioritized customer list"}</h3>
-          <span className="crm-badge">{lang === "sv" ? "Sortering: Potential" : "Sort: Potential"}</span>
+          <select className="crm-select" value={sort} onChange={(event) => setSort(event.target.value)}>
+            <option value="potential">{lang === "sv" ? "Sort: Potential" : "Sort: Potential"}</option>
+            <option value="name_asc">{lang === "sv" ? "Sort: Namn A-Ö" : "Sort: Name A-Z"}</option>
+            <option value="name_desc">{lang === "sv" ? "Sort: Namn Ö-A" : "Sort: Name Z-A"}</option>
+            <option value="updated">{lang === "sv" ? "Sort: Senast uppdaterad" : "Sort: Last updated"}</option>
+          </select>
         </div>
 
         <div className="crm-row" style={{ marginTop: "0.7rem" }}>
@@ -126,14 +133,20 @@ export default function HomePage() {
                 <span className="crm-badge">{lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}</span>
               </div>
               <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                {(customer.country ?? "-") + " · " + (customer.seller ?? "-")}
+                {(customer.country ?? "-") + " · " + (customer.region ?? "-") + " · " + (customer.seller ?? "-")}
                 {customer.industry ? ` · ${customer.industry}` : ""}
               </p>
-              <p style={{ marginTop: "0.45rem" }}>
+              <div className="crm-row" style={{ marginTop: "0.45rem" }}>
                 <Link href={`/customers/${customer.id}`} className="crm-link-inline">
                   {lang === "sv" ? "Öppna kundkort" : "Open customer profile"}
                 </Link>
-              </p>
+                <Link
+                  href={`/customers/${customer.id}?autoSimilar=1&scope=${customer.region ? "region" : "country"}`}
+                  className="crm-link-inline"
+                >
+                  {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
+                </Link>
+              </div>
             </article>
           ))}
         </div>

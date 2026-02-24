@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useI18n } from "@/components/i18n";
+import { useSearchParams } from "next/navigation";
 
 type SimilarCustomer = {
   id: string;
@@ -26,6 +27,20 @@ type Customer = {
   phone: string | null;
   notes: string | null;
   potentialScore: number;
+  contacts: Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    role: string | null;
+    email: string | null;
+    phone: string | null;
+  }>;
+  plans: Array<{
+    id: string;
+    title: string;
+    status: "PLANNED" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETED";
+    owner: string | null;
+  }>;
   webshopSignals?: {
     title?: string;
     description?: string;
@@ -35,6 +50,7 @@ type Customer = {
 
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const { lang } = useI18n();
+  const searchParams = useSearchParams();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [similar, setSimilar] = useState<SimilarCustomer[]>([]);
   const [aiPrompt, setAiPrompt] = useState<string>("");
@@ -69,6 +85,22 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     loadCustomer();
     loadSimilar(scope);
   }, [params.id, scope, lang]);
+
+  useEffect(() => {
+    const shouldAutoRun = searchParams.get("autoSimilar") === "1";
+    const requestedScope = searchParams.get("scope");
+    const nextScope = requestedScope === "country" ? "country" : "region";
+
+    if (!shouldAutoRun) return;
+
+    setScope(nextScope);
+    setStatus(lang === "sv" ? "Laddar liknande kunder..." : "Loading similar customers...");
+    loadSimilar(nextScope).then(() => {
+      setStatus(lang === "sv" ? "Liknande kunder laddade." : "Similar customers loaded.");
+      const section = document.getElementById("similar-customers");
+      if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [searchParams, lang]);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -157,6 +189,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       </section>
 
       <section className="crm-card">
+        <h3>{lang === "sv" ? "Översikt" : "Overview"}</h3>
+        <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
+          {lang === "sv" ? "Land" : "Country"}: {customer.country ?? "-"} · {lang === "sv" ? "Region" : "Region"}: {customer.region ?? "-"} · {lang === "sv" ? "Säljare" : "Seller"}: {customer.seller ?? "-"}
+        </p>
+        <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+          {lang === "sv" ? "Bransch" : "Industry"}: {customer.industry ?? "-"} · {lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}
+        </p>
+        <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+          {lang === "sv" ? "Kontakter" : "Contacts"}: {customer.contacts.length} · {lang === "sv" ? "Planer" : "Plans"}: {customer.plans.length}
+        </p>
+      </section>
+
+      <section className="crm-card">
         <h3>{lang === "sv" ? "Kundinformation" : "Customer information"}</h3>
         <form onSubmit={onSave} style={{ marginTop: "0.8rem" }}>
           <div className="crm-row">
@@ -201,7 +246,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         </form>
       </section>
 
-      <section className="crm-card">
+      <section className="crm-card" id="similar-customers">
         <div className="crm-item-head">
           <h3>{lang === "sv" ? "Liknande kunder (AI)" : "Similar customers (AI)"}</h3>
           <select className="crm-select" value={scope} onChange={(e) => setScope(e.target.value as "region" | "country")}>
@@ -230,6 +275,48 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 </p>
                 <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
                   {lang === "sv" ? "Potential" : "Potential"}: {item.potentialScore}
+                </p>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="crm-card">
+        <h3>{lang === "sv" ? "Kontakter" : "Contacts"}</h3>
+        <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+          {customer.contacts.length === 0 ? (
+            <p className="crm-empty">{lang === "sv" ? "Inga kontakter registrerade." : "No contacts registered."}</p>
+          ) : (
+            customer.contacts.map((contact) => (
+              <article key={contact.id} className="crm-item">
+                <div className="crm-item-head">
+                  <strong>{contact.firstName} {contact.lastName}</strong>
+                  <span className="crm-badge">{contact.role ?? "-"}</span>
+                </div>
+                <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+                  {contact.email ?? "-"} {contact.phone ? ` · ${contact.phone}` : ""}
+                </p>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="crm-card">
+        <h3>{lang === "sv" ? "Planer" : "Plans"}</h3>
+        <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+          {customer.plans.length === 0 ? (
+            <p className="crm-empty">{lang === "sv" ? "Inga planer registrerade." : "No plans registered."}</p>
+          ) : (
+            customer.plans.map((plan) => (
+              <article key={plan.id} className="crm-item">
+                <div className="crm-item-head">
+                  <strong>{plan.title}</strong>
+                  <span className="crm-badge">{plan.status}</span>
+                </div>
+                <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+                  {lang === "sv" ? "Ansvarig" : "Owner"}: {plan.owner ?? "-"}
                 </p>
               </article>
             ))

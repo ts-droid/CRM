@@ -15,6 +15,12 @@ export async function GET(req: Request) {
   const orderBy =
     sort === "potential"
       ? [{ potentialScore: "desc" as const }, { createdAt: "desc" as const }]
+      : sort === "name_asc"
+      ? [{ name: "asc" as const }]
+      : sort === "name_desc"
+      ? [{ name: "desc" as const }]
+      : sort === "updated"
+      ? [{ updatedAt: "desc" as const }]
       : [{ createdAt: "desc" as const }];
 
   const customers = await prisma.customer.findMany({
