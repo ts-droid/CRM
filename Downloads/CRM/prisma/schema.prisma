@@ -15,17 +15,23 @@ enum PlanStatus {
 }
 
 model Customer {
-  id          String    @id @default(cuid())
-  name        String
-  organization String?
-  industry    String?
-  email       String?
-  phone       String?
-  notes       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  contacts    Contact[]
-  plans       Plan[]
+  id             String    @id @default(cuid())
+  name           String
+  organization   String?
+  industry       String?
+  country        String?
+  region         String?
+  seller         String?
+  website        String?
+  email          String?
+  phone          String?
+  notes          String?
+  potentialScore Int       @default(50)
+  webshopSignals Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  contacts       Contact[]
+  plans          Plan[]
 }
 
 model Contact {

@@ -1,15 +1,29 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const country = searchParams.get("country");
+  const seller = searchParams.get("seller");
+  const sort = searchParams.get("sort");
+
+  const where = {
+    ...(country ? { country } : {}),
+    ...(seller ? { seller } : {})
+  };
+
+  const orderBy =
+    sort === "potential"
+      ? [{ potentialScore: "desc" as const }, { createdAt: "desc" as const }]
+      : [{ createdAt: "desc" as const }];
+
   const customers = await prisma.customer.findMany({
+    where,
     include: {
       contacts: true,
       plans: true
     },
-    orderBy: {
-      createdAt: "desc"
-    }
+    orderBy
   });
 
   return NextResponse.json(customers);
@@ -21,9 +35,14 @@ export async function POST(req: Request) {
       name?: string;
       organization?: string;
       industry?: string;
+      country?: string;
+      region?: string;
+      seller?: string;
+      website?: string;
       email?: string;
       phone?: string;
       notes?: string;
+      potentialScore?: number;
     };
 
     if (!body.name || body.name.trim().length < 2) {
@@ -35,9 +54,14 @@ export async function POST(req: Request) {
         name: body.name,
         organization: body.organization,
         industry: body.industry,
+        country: body.country,
+        region: body.region,
+        seller: body.seller,
+        website: body.website,
         email: body.email,
         phone: body.phone,
-        notes: body.notes
+        notes: body.notes,
+        potentialScore: typeof body.potentialScore === "number" ? body.potentialScore : 50
       }
     });
 

@@ -204,6 +204,17 @@ a {
   border-color: var(--accent-2);
 }
 
+.crm-button-secondary {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.crm-button-secondary:hover {
+  background: #f5f5f5;
+  border-color: #d6d6d6;
+}
+
 .crm-list {
   display: grid;
   gap: 0.75rem;
@@ -254,6 +265,11 @@ a {
   border-radius: 12px;
   padding: 1rem;
   color: var(--ink-muted);
+}
+
+.crm-link-inline {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 @media (max-width: 720px) {
