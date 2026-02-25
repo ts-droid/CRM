@@ -163,6 +163,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [activeTab, setActiveTab] = useState<"overview" | "contacts" | "plans" | "activity">("overview");
   const [activities, setActivities] = useState<Activity[]>([]);
   const [noteText, setNoteText] = useState("");
+  const [activityStatus, setActivityStatus] = useState("");
+  const [activitySaving, setActivitySaving] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [contactStatus, setContactStatus] = useState<string>("");
   const [contactsSaving, setContactsSaving] = useState(false);
@@ -435,18 +437,27 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   }
 
   async function addActivityNote() {
-    if (!noteText.trim()) return;
+    if (!noteText.trim()) {
+      setActivityStatus(lang === "sv" ? "Skriv en notering först." : "Write a note first.");
+      return;
+    }
+    setActivitySaving(true);
+    setActivityStatus("");
     const res = await fetch(`/api/customers/${params.id}/activities`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: noteText.trim(), actorName: "CRM user" })
+      body: JSON.stringify({ message: noteText.trim(), actorName: currentUserEmail || "CRM user" })
     });
     if (!res.ok) {
-      setStatus(lang === "sv" ? "Kunde inte spara notering." : "Could not save note.");
+      setActivityStatus(lang === "sv" ? "Kunde inte spara notering." : "Could not save note.");
+      setActivitySaving(false);
       return;
     }
+    const created = (await res.json()) as Activity;
     setNoteText("");
-    await loadActivities();
+    setActivities((prev) => [created, ...prev]);
+    setActivityStatus(lang === "sv" ? "Notering sparad." : "Note saved.");
+    setActivitySaving(false);
   }
 
   if (loading) {
@@ -789,10 +800,11 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           />
         </div>
         <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-          <button className="crm-button" type="button" onClick={addActivityNote}>
-            {lang === "sv" ? "Spara notering" : "Save note"}
+          <button className="crm-button" type="button" onClick={addActivityNote} disabled={activitySaving}>
+            {activitySaving ? (lang === "sv" ? "Sparar..." : "Saving...") : (lang === "sv" ? "Spara notering" : "Save note")}
           </button>
         </div>
+        {activityStatus ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{activityStatus}</p> : null}
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {activities.length === 0 ? (
             <p className="crm-empty">{lang === "sv" ? "Ingen aktivitet ännu." : "No activity yet."}</p>
@@ -804,7 +816,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   <span className="crm-badge">{new Date(item.createdAt).toLocaleString()}</span>
                 </div>
                 <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>{item.message}</p>
-                {item.actorName ? <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>{item.actorName}</p> : null}
+                <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                  {(item.actorName || "-") + " · " + new Date(item.createdAt).toLocaleString()}
+                </p>
               </article>
             ))
           )}

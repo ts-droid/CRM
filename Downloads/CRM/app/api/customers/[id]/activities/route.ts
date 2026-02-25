@@ -1,7 +1,7 @@
 import { ActivityType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { logActivity } from "@/lib/activity";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const activities = await prisma.activity.findMany({
@@ -28,14 +28,25 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: "message is required" }, { status: 400 });
     }
 
-    await logActivity({
-      type: ActivityType.NOTE,
-      message: body.message.trim(),
-      customerId: params.id,
-      actorName: body.actorName?.trim() || undefined
+    const cookieHeader = req.headers.get("cookie") || "";
+    const token = cookieHeader
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${SESSION_COOKIE}=`))
+      ?.split("=")[1];
+    const session = token ? await verifySession(token) : null;
+    const actorName = session?.email || body.actorName?.trim() || undefined;
+
+    const created = await prisma.activity.create({
+      data: {
+        type: ActivityType.NOTE,
+        message: body.message.trim(),
+        customerId: params.id,
+        actorName
+      }
     });
 
-    return NextResponse.json({ ok: true }, { status: 201 });
+    return NextResponse.json(created, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
