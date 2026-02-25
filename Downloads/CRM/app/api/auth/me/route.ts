@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
+import { isAdminEmail, SESSION_COOKIE, verifySession } from "@/lib/auth/session";
 
 export async function GET(req: Request) {
   const cookieHeader = req.headers.get("cookie") || "";
@@ -16,6 +16,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     authenticated: true,
+    isAdmin: isAdminEmail(session.email),
     email: session.email,
     name: session.name || null,
     picture: session.picture || null

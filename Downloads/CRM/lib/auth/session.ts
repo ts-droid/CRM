@@ -51,3 +51,13 @@ export function isAllowedEmail(email: string): boolean {
   if (allowDomain && normalized.endsWith(`@${allowDomain}`)) return true;
   return false;
 }
+
+export function isAdminEmail(email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
+  const adminEmails = (process.env.AUTH_ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return adminEmails.includes(normalized);
+}

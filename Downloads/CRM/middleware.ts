@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
+import { isAdminEmail, SESSION_COOKIE, verifySession } from "@/lib/auth/session";
 
 const PUBLIC_PATHS = ["/login", "/api/auth/google", "/api/auth/google/callback", "/api/auth/logout", "/api/auth/me"];
 
@@ -16,7 +16,21 @@ export async function middleware(req: NextRequest) {
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySession(token) : null;
-  if (session?.email) return NextResponse.next();
+  if (session?.email) {
+    const adminPath = pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
+    if (!adminPath) return NextResponse.next();
+
+    if (isAdminEmail(session.email)) return NextResponse.next();
+
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const deniedUrl = req.nextUrl.clone();
+    deniedUrl.pathname = "/";
+    deniedUrl.searchParams.set("error", "admin_required");
+    return NextResponse.redirect(deniedUrl);
+  }
 
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

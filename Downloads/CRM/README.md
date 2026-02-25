@@ -28,6 +28,7 @@ För Google Auth:
 - `GOOGLE_REDIRECT_URL` (ex. `https://<din-domän>/api/auth/google/callback`)
 - `AUTH_ALLOWED_DOMAIN` (ex. `vendora.se`)
 - valfritt: `AUTH_ALLOWED_EMAILS` (kommaseparerad allowlist)
+- `AUTH_ADMIN_EMAILS` (kommaseparerad admin-lista, t.ex. `ts@vendora.se`)
 
 För notifieringar:
 - `SMTP_HOST` (ex. `smtp.gmail.com`)
@@ -100,6 +101,5 @@ npm run dev
 
 ## Nästa steg
 
-- Rollstyrning (admin/sälj)
 - Schemalagd reminders-körning via Railway Cron
 - Integration med försäljnings-API
