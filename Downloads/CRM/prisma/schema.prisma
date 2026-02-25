@@ -47,6 +47,7 @@ model Customer {
   contacts       Contact[]
   plans          Plan[]
   activities     Activity[]
+  salesRecords   SalesRecord[]
 }
 
 model Contact {
@@ -103,4 +104,25 @@ model AppSetting {
   value     Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model SalesRecord {
+  id                  String   @id @default(cuid())
+  customerId          String
+  customer            Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  source              String   @default("manual")
+  externalCustomerRef String?
+  periodStart         DateTime
+  periodEnd           DateTime
+  currency            String   @default("SEK")
+  netSales            Float?
+  grossMargin         Float?
+  unitsSold           Int?
+  ordersCount         Int?
+  metadata            Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([customerId, periodStart, periodEnd])
+  @@unique([customerId, source, periodStart, periodEnd])
 }

@@ -86,6 +86,15 @@ npm run dev
 - `POST /api/admin/csv/import`
   - Importerar kunder från CSV (uppdaterar om `id` finns, annars skapar).
 
+## Försäljningsdata per kund (API-förberett)
+
+- `GET /api/customers/:id/sales?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=50`
+  - Hämtar försäljningsrader för kund + summering.
+- `POST /api/customers/:id/sales`
+  - Upsert av en försäljningsperiod för kund.
+- `POST /api/sales/import`
+  - Bulk-upsert av flera rader (`rows[]`) mot befintliga kunder via `customerId` eller exakt `customerName`.
+
 ## Nästa steg
 
 - Rollstyrning (admin/sälj)
