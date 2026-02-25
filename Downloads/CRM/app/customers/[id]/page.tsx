@@ -2,17 +2,6 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useI18n } from "@/components/i18n";
-import { useSearchParams } from "next/navigation";
-
-type SimilarCustomer = {
-  id: string;
-  name: string;
-  country: string | null;
-  region: string | null;
-  industry: string | null;
-  potentialScore: number;
-  matchScore: number;
-};
 
 type Customer = {
   id: string;
@@ -74,11 +63,7 @@ function emptyContactDraft(): ContactDraft {
 
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const { lang } = useI18n();
-  const searchParams = useSearchParams();
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [similar, setSimilar] = useState<SimilarCustomer[]>([]);
-  const [aiPrompt, setAiPrompt] = useState<string>("");
-  const [scope, setScope] = useState<"region" | "country">("region");
   const [status, setStatus] = useState<string>("");
   const [contactStatus, setContactStatus] = useState<string>("");
   const [contactsSaving, setContactsSaving] = useState(false);
@@ -100,34 +85,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     setLoading(false);
   }
 
-  async function loadSimilar(nextScope: "region" | "country") {
-    const res = await fetch(`/api/customers/${params.id}/similar?scope=${nextScope}`, { cache: "no-store" });
-    if (!res.ok) return;
-
-    const data = (await res.json()) as { results: SimilarCustomer[] };
-    setSimilar(data.results);
-  }
-
   useEffect(() => {
     loadCustomer();
-    loadSimilar(scope);
-  }, [params.id, scope, lang]);
-
-  useEffect(() => {
-    const shouldAutoRun = searchParams.get("autoSimilar") === "1";
-    const requestedScope = searchParams.get("scope");
-    const nextScope = requestedScope === "country" ? "country" : "region";
-
-    if (!shouldAutoRun) return;
-
-    setScope(nextScope);
-    setStatus(lang === "sv" ? "Laddar liknande kunder..." : "Loading similar customers...");
-    loadSimilar(nextScope).then(() => {
-      setStatus(lang === "sv" ? "Liknande kunder laddade." : "Similar customers loaded.");
-      const section = document.getElementById("similar-customers");
-      if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, [searchParams, lang]);
+  }, [params.id, lang]);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -160,11 +120,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
   async function runSimilarSearch() {
     setStatus(lang === "sv" ? "Söker liknande kunder..." : "Searching similar customers...");
-    await loadSimilar(scope);
-    setStatus(lang === "sv" ? "Liknande kunder uppdaterade." : "Similar customers updated.");
-
-    const section = document.getElementById("similar-customers");
-    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+    const nextScope = customer?.region ? "region" : "country";
+    const res = await fetch(`/api/customers/${params.id}/similar?scope=${nextScope}`, { cache: "no-store" });
+    if (!res.ok) {
+      setStatus(lang === "sv" ? "Kunde inte hämta liknande kunder." : "Could not fetch similar customers.");
+      return;
+    }
+    const data = (await res.json()) as { results: Array<{ name: string }> };
+    const topMatches = data.results.slice(0, 3).map((item) => item.name).join(", ");
+    setStatus(
+      lang === "sv"
+        ? `Hittade ${data.results.length} liknande kunder (${nextScope}). ${topMatches || ""}`.trim()
+        : `Found ${data.results.length} similar customers (${nextScope}). ${topMatches || ""}`.trim()
+    );
   }
 
   function updateNewContact(index: number, field: keyof Omit<ContactDraft, "key">, value: string) {
@@ -232,42 +200,6 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     }
   }
 
-  async function syncWebshop() {
-    setStatus(lang === "sv" ? "Synkar webshop..." : "Syncing webshop...");
-    const res = await fetch(`/api/customers/${params.id}/sync-webshop`, { method: "POST" });
-
-    if (!res.ok) {
-      setStatus(lang === "sv" ? "Webshop-sync misslyckades" : "Webshop sync failed");
-      return;
-    }
-
-    setStatus(lang === "sv" ? "Webshop-data uppdaterad" : "Webshop data updated");
-    await loadCustomer();
-    await loadSimilar(scope);
-  }
-
-  async function buildPrompt() {
-    setStatus(lang === "sv" ? "Bygger AI-prompt..." : "Building AI prompt...");
-
-    const res = await fetch("/api/research", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customerId: params.id,
-        scope
-      })
-    });
-
-    if (!res.ok) {
-      setStatus(lang === "sv" ? "Kunde inte skapa prompt" : "Could not build prompt");
-      return;
-    }
-
-    const data = (await res.json()) as { aiPrompt?: string };
-    setAiPrompt(data.aiPrompt ?? "");
-    setStatus(lang === "sv" ? "AI-prompt klar" : "AI prompt ready");
-  }
-
   if (loading) {
     return <section className="crm-card">{lang === "sv" ? "Laddar kundkort..." : "Loading customer profile..."}</section>;
   }
@@ -332,54 +264,12 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           </div>
           <div className="crm-row" style={{ marginTop: "0.7rem" }}>
             <button className="crm-button" type="submit">{lang === "sv" ? "Spara" : "Save"}</button>
-            <button className="crm-button crm-button-secondary" type="button" onClick={syncWebshop}>
-              {lang === "sv" ? "Synka webshop" : "Sync webshop"}
-            </button>
             <button className="crm-button crm-button-secondary" type="button" onClick={runSimilarSearch}>
               {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
-            </button>
-            <button className="crm-button crm-button-secondary" type="button" onClick={buildPrompt}>
-              {lang === "sv" ? "Skapa AI-prompt" : "Build AI prompt"}
             </button>
           </div>
           {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
         </form>
-      </section>
-
-      <section className="crm-card" id="similar-customers">
-        <div className="crm-item-head">
-          <h3>{lang === "sv" ? "Liknande kunder (AI)" : "Similar customers (AI)"}</h3>
-          <select className="crm-select" value={scope} onChange={(e) => setScope(e.target.value as "region" | "country")}>
-            <option value="region">{lang === "sv" ? "Region" : "Region"}</option>
-            <option value="country">{lang === "sv" ? "Land" : "Country"}</option>
-          </select>
-        </div>
-        <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
-          {lang === "sv"
-            ? "Rankning baserad på land/region, bransch och potentialscore."
-            : "Ranking based on country/region, industry and potential score."}
-        </p>
-
-        <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-          {similar.length === 0 ? (
-            <p className="crm-empty">{lang === "sv" ? "Inga liknande kunder hittades." : "No similar customers found."}</p>
-          ) : (
-            similar.map((item) => (
-              <article key={item.id} className="crm-item">
-                <div className="crm-item-head">
-                  <strong>{item.name}</strong>
-                  <span className="crm-badge">Match: {item.matchScore}</span>
-                </div>
-                <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                  {(item.country ?? "-") + " · " + (item.region ?? "-") + " · " + (item.industry ?? "-")}
-                </p>
-                <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
-                  {lang === "sv" ? "Potential" : "Potential"}: {item.potentialScore}
-                </p>
-              </article>
-            ))
-          )}
-        </div>
       </section>
 
       <section className="crm-card">
@@ -512,12 +402,6 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         </section>
       ) : null}
 
-      {aiPrompt ? (
-        <section className="crm-card">
-          <h3>{lang === "sv" ? "AI-prompt för analys" : "AI prompt for analysis"}</h3>
-          <pre className="crm-pre">{aiPrompt}</pre>
-        </section>
-      ) : null}
     </div>
   );
 }
