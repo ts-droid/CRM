@@ -20,6 +20,7 @@ cp .env.example .env
 ```
 
 Sätt korrekt `DATABASE_URL` från Railway PostgreSQL i `.env`.
+Sätt `APP_URL` till publik CRM-domän (för korrekta OAuth redirects bakom proxy).
 
 För Google Auth:
 - `AUTH_SECRET` (lång slumpad sträng)

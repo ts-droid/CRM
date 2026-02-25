@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/session";
+import { getPublicOrigin } from "@/lib/auth/url";
 
 export async function POST(req: Request) {
   const url = new URL(req.url);
@@ -16,7 +17,8 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const response = NextResponse.redirect(new URL("/login", url.origin));
+  const publicOrigin = getPublicOrigin(url.origin);
+  const response = NextResponse.redirect(new URL("/login", publicOrigin));
   response.cookies.set(SESSION_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",

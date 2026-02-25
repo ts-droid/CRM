@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { NextResponse } from "next/server";
+import { getPublicOrigin } from "@/lib/auth/url";
 
 function getRedirectUri(origin: string): string {
   return process.env.GOOGLE_REDIRECT_URL || `${origin}/api/auth/google/callback`;
@@ -14,8 +15,9 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
+  const publicOrigin = getPublicOrigin(url.origin);
   const nextPath = url.searchParams.get("next") || "/";
-  const oauth = new google.auth.OAuth2(clientId, clientSecret, getRedirectUri(url.origin));
+  const oauth = new google.auth.OAuth2(clientId, clientSecret, getRedirectUri(publicOrigin));
   const authUrl = oauth.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
