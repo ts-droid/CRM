@@ -180,6 +180,40 @@ type ResearchApiResponse = {
   aiError?: string | null;
 };
 
+type MarkdownSection = {
+  title: string;
+  body: string;
+};
+
+function parseMarkdownSections(text: string): MarkdownSection[] {
+  const lines = text.split("\n");
+  const sections: MarkdownSection[] = [];
+  let currentTitle = "";
+  let currentBody: string[] = [];
+
+  const pushCurrent = () => {
+    if (!currentTitle && currentBody.length === 0) return;
+    sections.push({
+      title: currentTitle || "Output",
+      body: currentBody.join("\n").trim()
+    });
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (line.startsWith("## ")) {
+      pushCurrent();
+      currentTitle = line.replace(/^##\s+/, "").trim();
+      currentBody = [];
+    } else {
+      currentBody.push(rawLine);
+    }
+  }
+
+  pushCurrent();
+  return sections.filter((section) => section.body.length > 0 || section.title !== "Output");
+}
+
 function emptyContactDraft(): ContactDraft {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
@@ -386,6 +420,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const savedAtText = customer
     ? new Date(customer.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "--:--";
+  const similarResearchSections = parseMarkdownSections(selectedSimilarResearch);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -841,7 +876,18 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                     <p className="crm-subtle" style={{ marginTop: "0.6rem", color: "#b42318" }}>{selectedSimilarResearchError}</p>
                   ) : null}
                   {selectedSimilarResearch ? (
-                    <pre className="crm-pre" style={{ marginTop: "0.7rem" }}>{selectedSimilarResearch}</pre>
+                    similarResearchSections.length > 0 ? (
+                      <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                        {similarResearchSections.map((section) => (
+                          <article key={section.title} className="crm-item">
+                            <h4 style={{ margin: 0 }}>{section.title}</h4>
+                            <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{section.body}</pre>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <pre className="crm-pre" style={{ marginTop: "0.7rem" }}>{selectedSimilarResearch}</pre>
+                    )
                   ) : null}
                 </section>
               ) : null}
