@@ -172,6 +172,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [noteText, setNoteText] = useState("");
   const [activityStatus, setActivityStatus] = useState("");
   const [activitySaving, setActivitySaving] = useState(false);
+  const [planSaving, setPlanSaving] = useState(false);
+  const [planStatus, setPlanStatus] = useState("");
   const [status, setStatus] = useState<string>("");
   const [contactStatus, setContactStatus] = useState<string>("");
   const [contactsSaving, setContactsSaving] = useState(false);
@@ -459,6 +461,44 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       setContactStatus(error instanceof Error ? error.message : lang === "sv" ? "Något gick fel." : "Something went wrong.");
     } finally {
       setContactsSaving(false);
+    }
+  }
+
+  async function createPlan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPlanSaving(true);
+    setPlanStatus("");
+
+    const form = new FormData(event.currentTarget);
+
+    try {
+      const res = await fetch("/api/plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: String(form.get("title") ?? "").trim(),
+          owner: String(form.get("owner") ?? "").trim() || null,
+          status: String(form.get("status") ?? "PLANNED"),
+          priority: String(form.get("priority") ?? "MEDIUM"),
+          startDate: String(form.get("startDate") ?? "").trim() || null,
+          endDate: String(form.get("endDate") ?? "").trim() || null,
+          description: String(form.get("description") ?? "").trim() || null,
+          customerId: params.id
+        })
+      });
+
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte skapa plan." : "Could not create plan."));
+      }
+
+      event.currentTarget.reset();
+      setPlanStatus(lang === "sv" ? "Plan sparad." : "Plan saved.");
+      await loadCustomer();
+    } catch (error) {
+      setPlanStatus(error instanceof Error ? error.message : (lang === "sv" ? "Kunde inte skapa plan." : "Could not create plan."));
+    } finally {
+      setPlanSaving(false);
     }
   }
 
@@ -790,6 +830,34 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       {activeTab === "plans" ? (
       <section className="crm-card">
         <h3>{lang === "sv" ? "Planer" : "Plans"}</h3>
+        <form onSubmit={createPlan} style={{ marginTop: "0.8rem" }}>
+          <div className="crm-row">
+            <input className="crm-input" name="title" placeholder={lang === "sv" ? "Titel" : "Title"} required />
+            <input className="crm-input" name="owner" placeholder={lang === "sv" ? "Ansvarig" : "Owner"} />
+            <select className="crm-select" name="status" defaultValue="PLANNED">
+              <option value="PLANNED">{lang === "sv" ? "Planerad" : "Planned"}</option>
+              <option value="IN_PROGRESS">{lang === "sv" ? "Pågående" : "In progress"}</option>
+              <option value="ON_HOLD">{lang === "sv" ? "Pausad" : "On hold"}</option>
+              <option value="COMPLETED">{lang === "sv" ? "Avslutad" : "Completed"}</option>
+            </select>
+            <select className="crm-select" name="priority" defaultValue="MEDIUM">
+              <option value="LOW">{lang === "sv" ? "Låg" : "Low"}</option>
+              <option value="MEDIUM">{lang === "sv" ? "Medel" : "Medium"}</option>
+              <option value="HIGH">{lang === "sv" ? "Hög" : "High"}</option>
+            </select>
+          </div>
+          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+            <input className="crm-input" name="startDate" type="date" />
+            <input className="crm-input" name="endDate" type="date" />
+          </div>
+          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+            <textarea className="crm-textarea" name="description" placeholder={lang === "sv" ? "Beskrivning" : "Description"} />
+          </div>
+          <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={planSaving}>
+            {planSaving ? (lang === "sv" ? "Sparar..." : "Saving...") : (lang === "sv" ? "Spara plan" : "Save plan")}
+          </button>
+          {planStatus ? <p className="crm-subtle" style={{ marginTop: "0.55rem" }}>{planStatus}</p> : null}
+        </form>
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {customer.plans.length === 0 ? (
             <p className="crm-empty">{lang === "sv" ? "Inga planer registrerade." : "No plans registered."}</p>
