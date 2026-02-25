@@ -17,6 +17,7 @@ type Customer = {
   phone: string | null;
   notes: string | null;
   potentialScore: number;
+  updatedAt: string;
   contacts: Array<{
     id: string;
     firstName: string;
@@ -75,6 +76,7 @@ type SalesResponse = {
 type FormConfig = {
   industries: string[];
   countries: string[];
+  sellers: string[];
 };
 
 type CustomerRegionRow = {
@@ -84,7 +86,8 @@ type CustomerRegionRow = {
 
 const DEFAULT_FORM_CONFIG: FormConfig = {
   industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
-  countries: ["SE", "NO", "DK", "FI"]
+  countries: ["SE", "NO", "DK", "FI"],
+  sellers: ["Team Nordics"]
 };
 
 function buildOptionList(...lists: Array<Array<string | null | undefined> | undefined>): string[] {
@@ -140,6 +143,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [regionsByCountry, setRegionsByCountry] = useState<Record<string, string[]>>({});
   const [allRegions, setAllRegions] = useState<string[]>([]);
   const [selectedCountry, setSelectedCountry] = useState("");
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function loadCustomer() {
@@ -171,7 +175,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         if (data.config) {
           setFormConfig({
             industries: Array.isArray(data.config.industries) ? data.config.industries : DEFAULT_FORM_CONFIG.industries,
-            countries: Array.isArray(data.config.countries) ? data.config.countries : DEFAULT_FORM_CONFIG.countries
+            countries: Array.isArray(data.config.countries) ? data.config.countries : DEFAULT_FORM_CONFIG.countries,
+            sellers: Array.isArray(data.config.sellers) ? data.config.sellers : DEFAULT_FORM_CONFIG.sellers
           });
         }
       }
@@ -200,6 +205,17 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       }
     } catch {
       // Keep defaults
+    }
+  }
+
+  async function loadCurrentUser() {
+    try {
+      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { email?: string };
+      if (data.email) setCurrentUserEmail(data.email);
+    } catch {
+      // no-op
     }
   }
 
@@ -233,12 +249,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     loadFormOptions();
     loadActivities();
     loadSales();
+    loadCurrentUser();
   }, [params.id, lang]);
 
   const industryOptions = buildOptionList(formConfig.industries, [customer?.industry]);
   const countryOptions = buildOptionList(formConfig.countries, [customer?.country]);
+  const sellerOptions = buildOptionList(formConfig.sellers, [customer?.seller]);
   const scopedRegionOptions = selectedCountry ? regionsByCountry[selectedCountry] ?? [] : allRegions;
   const regionOptions = buildOptionList(scopedRegionOptions, [customer?.region]);
+  const latestCustomerUpdate = activities.find((activity) => activity.type === "CUSTOMER_UPDATED");
+  const lastSavedBy = latestCustomerUpdate?.actorName || currentUserEmail || "-";
+  const savedAtText = customer
+    ? new Date(customer.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "--:--";
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -455,7 +478,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                     </option>
                   ))}
                 </select>
-                <input className="crm-input" name="seller" defaultValue={customer.seller ?? ""} placeholder={lang === "sv" ? "Säljare" : "Seller"} />
+                <select className="crm-select" name="seller" defaultValue={customer.seller ?? ""}>
+                  <option value="">{lang === "sv" ? "Välj säljare" : "Select seller"}</option>
+                  {sellerOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <input className="crm-input" name="website" defaultValue={customer.website ?? ""} placeholder={lang === "sv" ? "Webbsida" : "Website"} />
@@ -486,6 +516,11 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   {lang === "sv" ? "Öppna research för kund" : "Open research for customer"}
                 </Link>
               </div>
+              <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
+                {lang === "sv"
+                  ? `Sparat ${savedAtText} av ${lastSavedBy}`
+                  : `Saved at ${savedAtText} by ${lastSavedBy}`}
+              </p>
               {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
             </form>
           </section>

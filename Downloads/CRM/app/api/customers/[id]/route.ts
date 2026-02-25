@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ActivityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   let customer:
@@ -38,6 +39,14 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   try {
+    const cookieHeader = req.headers.get("cookie") || "";
+    const token = cookieHeader
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${SESSION_COOKIE}=`))
+      ?.split("=")[1];
+    const session = token ? await verifySession(token) : null;
+
     const body = (await req.json()) as {
       name?: string;
       organization?: string;
@@ -76,6 +85,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       type: ActivityType.CUSTOMER_UPDATED,
       message: `Customer updated: ${updated.name}`,
       customerId: updated.id,
+      actorName: session?.email || undefined,
       metadata: {
         potentialScore: updated.potentialScore,
         seller: updated.seller,
