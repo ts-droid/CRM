@@ -21,6 +21,20 @@ cp .env.example .env
 
 Sätt korrekt `DATABASE_URL` från Railway PostgreSQL i `.env`.
 
+För Google Auth:
+- `AUTH_SECRET` (lång slumpad sträng)
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URL` (ex. `https://<din-domän>/api/auth/google/callback`)
+- `AUTH_ALLOWED_DOMAIN` (ex. `vendora.se`)
+- valfritt: `AUTH_ALLOWED_EMAILS` (kommaseparerad allowlist)
+
+För notifieringar:
+- `SMTP_HOST` (ex. `smtp.gmail.com`)
+- `SMTP_PORT` (ex. `587`)
+- `SMTP_USER`
+- `SMTP_PASS` (Gmail app password)
+
 ## 3) Prisma migration och client
 
 ```bash
@@ -74,7 +88,6 @@ npm run dev
 
 ## Nästa steg
 
-- Lägg till autentisering (NextAuth eller Clerk)
 - Rollstyrning (admin/sälj)
-- Aktivitetslogg per kund/kontakt
+- Schemalagd reminders-körning via Railway Cron
 - Integration med försäljnings-API

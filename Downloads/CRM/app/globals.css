@@ -82,6 +82,12 @@ a {
   flex-wrap: wrap;
 }
 
+.crm-user {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .crm-nav {
   display: flex;
   gap: 0.5rem;
