@@ -354,19 +354,32 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   }
 
   async function runSimilarSearch() {
-    setStatus(lang === "sv" ? "Söker liknande kunder..." : "Searching similar customers...");
+    setStatus(lang === "sv" ? "Kör AI-query för liknande kunder..." : "Running AI query for similar customers...");
     const nextScope = customer?.region ? "region" : "country";
-    const res = await fetch(`/api/customers/${params.id}/similar?scope=${nextScope}`, { cache: "no-store" });
+    const res = await fetch("/api/research", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customerId: params.id,
+        scope: nextScope,
+        maxSimilar: 8,
+        basePrompt:
+          "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
+        extraInstructions:
+          "Keep the response short. Focus on similar profile in segment, geography and category focus."
+      })
+    });
     if (!res.ok) {
-      setStatus(lang === "sv" ? "Kunde inte hämta liknande kunder." : "Could not fetch similar customers.");
+      setStatus(lang === "sv" ? "Kunde inte köra AI-query för liknande kunder." : "Could not run AI similar-customer query.");
       return;
     }
-    const data = (await res.json()) as { results: Array<{ name: string }> };
-    const topMatches = data.results.slice(0, 3).map((item) => item.name).join(", ");
+    const data = (await res.json()) as { similarCustomers?: Array<{ name: string }> };
+    const similarRows = data.similarCustomers ?? [];
+    const topMatches = similarRows.slice(0, 3).map((item) => item.name).join(", ");
     setStatus(
       lang === "sv"
-        ? `Hittade ${data.results.length} liknande kunder (${nextScope}). ${topMatches || ""}`.trim()
-        : `Found ${data.results.length} similar customers (${nextScope}). ${topMatches || ""}`.trim()
+        ? `Hittade ${similarRows.length} liknande kunder (${nextScope}) via AI. ${topMatches || ""}`.trim()
+        : `Found ${similarRows.length} similar customers (${nextScope}) via AI. ${topMatches || ""}`.trim()
     );
   }
 
@@ -580,7 +593,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
                 </button>
                 <Link
-                  href={`/admin/research?tab=research&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}`}
+                  href={`/admin/research?tab=research&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}&autorun=1`}
                   className="crm-button crm-button-secondary"
                 >
                   {lang === "sv" ? "Öppna research för kund" : "Open research for customer"}

@@ -234,6 +234,7 @@ function ResearchAdminContent() {
   const [result, setResult] = useState<ResearchResponse | null>(null);
   const [researchBasePromptDraft, setResearchBasePromptDraft] = useState("");
   const [researchExtraInstructionsDraft, setResearchExtraInstructionsDraft] = useState("");
+  const [autoRunKey, setAutoRunKey] = useState("");
 
   const [csvStatus, setCsvStatus] = useState<string>("");
   const [csvLoading, setCsvLoading] = useState(false);
@@ -315,13 +316,9 @@ function ResearchAdminContent() {
     }
   }, [searchParams, config.defaultScope]);
 
-  async function onResearchSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function conductResearch(websitesRaw: string) {
     setResearchLoading(true);
     setResearchError("");
-
-    const form = new FormData(event.currentTarget);
-    const websitesRaw = String(form.get("websites") ?? "");
 
     try {
       const res = await fetch("/api/research", {
@@ -353,6 +350,23 @@ function ResearchAdminContent() {
       setResearchLoading(false);
     }
   }
+
+  async function onResearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const websitesRaw = String(form.get("websites") ?? "");
+    await conductResearch(websitesRaw);
+  }
+
+  useEffect(() => {
+    const shouldAutoRun = searchParams.get("autorun") === "1";
+    if (!shouldAutoRun) return;
+    if (!researchCustomerId.trim() && !researchCompanyName.trim()) return;
+    const nextKey = `${researchCustomerId.trim()}|${researchCompanyName.trim()}`;
+    if (nextKey === autoRunKey) return;
+    setAutoRunKey(nextKey);
+    conductResearch("");
+  }, [searchParams, autoRunKey, researchCustomerId, researchCompanyName]);
 
   async function onCsvImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -657,7 +671,7 @@ function ResearchAdminContent() {
               </div>
 
               <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={researchLoading}>
-                {researchLoading ? (lang === "sv" ? "Genererar..." : "Generating...") : (lang === "sv" ? "Generera prompt" : "Generate prompt")}
+                {researchLoading ? (lang === "sv" ? "Analyserar..." : "Analyzing...") : (lang === "sv" ? "Genomför research" : "Conduct research")}
               </button>
               {researchError ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.6rem" }}>{researchError}</p> : null}
             </form>
