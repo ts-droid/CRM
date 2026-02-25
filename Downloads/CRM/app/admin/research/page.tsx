@@ -19,6 +19,11 @@ type ResearchResponse = {
   aiError?: string | null;
 };
 
+type MarkdownSection = {
+  title: string;
+  body: string;
+};
+
 function extractBullets(text: string): string[] {
   return text
     .split("\n")
@@ -26,6 +31,35 @@ function extractBullets(text: string): string[] {
     .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
     .map((line) => line.replace(/^[-*]\s+/, "").replace(/^\d+\.\s+/, ""))
     .slice(0, 8);
+}
+
+function parseMarkdownSections(text: string): MarkdownSection[] {
+  const lines = text.split("\n");
+  const sections: MarkdownSection[] = [];
+  let currentTitle = "";
+  let currentBody: string[] = [];
+
+  const pushCurrent = () => {
+    if (!currentTitle && currentBody.length === 0) return;
+    sections.push({
+      title: currentTitle || "Output",
+      body: currentBody.join("\n").trim()
+    });
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (line.startsWith("## ")) {
+      pushCurrent();
+      currentTitle = line.replace(/^##\s+/, "").trim();
+      currentBody = [];
+    } else {
+      currentBody.push(rawLine);
+    }
+  }
+
+  pushCurrent();
+  return sections.filter((section) => section.body.length > 0 || section.title !== "Output");
 }
 
 type ResearchConfig = {
@@ -80,6 +114,7 @@ function ResearchAdminContent() {
 
   const aiText = result?.aiResult?.outputText ?? "";
   const aiBullets = useMemo(() => extractBullets(aiText), [aiText]);
+  const aiSections = useMemo(() => parseMarkdownSections(aiText), [aiText]);
 
   async function loadSettings() {
     try {
@@ -406,7 +441,18 @@ function ResearchAdminContent() {
                 {result.aiResult?.outputText ? (
                   <>
                     <p className="crm-subtle">{result.aiResult.provider} · {result.aiResult.model}</p>
-                    <pre className="crm-pre">{result.aiResult.outputText}</pre>
+                    {aiSections.length > 0 ? (
+                      <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                        {aiSections.map((section) => (
+                          <article key={section.title} className="crm-item">
+                            <h4 style={{ margin: 0 }}>{section.title}</h4>
+                            <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{section.body}</pre>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <pre className="crm-pre">{result.aiResult.outputText}</pre>
+                    )}
                   </>
                 ) : (
                   <p className="crm-subtle">{lang === "sv" ? "Ingen LLM-output ännu." : "No LLM output yet."}</p>
