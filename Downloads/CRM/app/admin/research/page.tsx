@@ -133,6 +133,7 @@ function ResearchAdminContent() {
     }),
     [lang]
   );
+  const settingsFormKey = useMemo(() => JSON.stringify(config), [config]);
 
   const aiText = result?.aiResult?.outputText ?? "";
   const aiBullets = useMemo(() => extractBullets(aiText), [aiText]);
@@ -555,7 +556,7 @@ function ResearchAdminContent() {
               : "Set Vendora/brand websites and extra instructions always used in research."}
           </p>
 
-          <form onSubmit={onSettingsSave} style={{ marginTop: "0.7rem" }}>
+          <form key={settingsFormKey} onSubmit={onSettingsSave} style={{ marginTop: "0.7rem" }}>
             <div className="crm-row">
               <select className="crm-select" name="defaultScope" defaultValue={config.defaultScope}>
                 <option value="region">{lang === "sv" ? "Default scope: Region" : "Default scope: Region"}</option>
