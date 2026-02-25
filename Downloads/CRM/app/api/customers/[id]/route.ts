@@ -4,6 +4,21 @@ import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
 
+function readSessionToken(cookieHeader: string): string | null {
+  const cookiePart = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${SESSION_COOKIE}=`));
+  if (!cookiePart) return null;
+  const raw = cookiePart.slice(`${SESSION_COOKIE}=`.length);
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   let customer:
     | (Awaited<ReturnType<typeof prisma.customer.findUnique>> & {
@@ -40,11 +55,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   try {
     const cookieHeader = req.headers.get("cookie") || "";
-    const token = cookieHeader
-      .split(";")
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(`${SESSION_COOKIE}=`))
-      ?.split("=")[1];
+    const token = readSessionToken(cookieHeader);
     const session = token ? await verifySession(token) : null;
 
     const body = (await req.json()) as {
