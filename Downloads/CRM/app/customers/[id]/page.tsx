@@ -78,6 +78,8 @@ type FormConfig = {
   countries: string[];
   regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
+  researchBasePrompt: string;
+  extraInstructions: string;
   quickSimilarBasePrompt: string;
   quickSimilarExtraInstructions: string;
 };
@@ -122,6 +124,9 @@ const DEFAULT_FORM_CONFIG: FormConfig = {
   ],
   sellers: ["Team Nordics"]
   ,
+  researchBasePrompt:
+    "You are a senior GTM & Channel Analyst for Vendora Nordic.",
+  extraInstructions: "",
   quickSimilarBasePrompt:
     "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
   quickSimilarExtraInstructions:
@@ -158,6 +163,23 @@ type ContactDraft = {
   notes: string;
 };
 
+type SimilarCustomer = {
+  id: string;
+  name: string;
+  country: string | null;
+  region: string | null;
+  industry: string | null;
+  seller: string | null;
+  potentialScore: number;
+  matchScore: number;
+};
+
+type ResearchApiResponse = {
+  similarCustomers?: SimilarCustomer[];
+  aiResult?: { outputText: string; model: string } | null;
+  aiError?: string | null;
+};
+
 function emptyContactDraft(): ContactDraft {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
@@ -188,6 +210,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [salesData, setSalesData] = useState<SalesResponse | null>(null);
   const [salesLoading, setSalesLoading] = useState(false);
   const [salesError, setSalesError] = useState("");
+  const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarStatus, setSimilarStatus] = useState("");
+  const [similarResults, setSimilarResults] = useState<SimilarCustomer[]>([]);
+  const [similarScopeUsed, setSimilarScopeUsed] = useState<"region" | "country" | null>(null);
+  const [selectedSimilar, setSelectedSimilar] = useState<SimilarCustomer | null>(null);
+  const [selectedSimilarResearch, setSelectedSimilarResearch] = useState("");
+  const [selectedSimilarResearchError, setSelectedSimilarResearchError] = useState("");
+  const [selectedSimilarResearchLoading, setSelectedSimilarResearchLoading] = useState(false);
   const [formConfig, setFormConfig] = useState<FormConfig>(DEFAULT_FORM_CONFIG);
   const [regionsByCountry, setRegionsByCountry] = useState<Record<string, string[]>>({});
   const [allRegions, setAllRegions] = useState<string[]>([]);
@@ -240,6 +270,15 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               ? data.config.regionsByCountry
               : DEFAULT_FORM_CONFIG.regionsByCountry,
             sellers: Array.isArray(data.config.sellers) ? data.config.sellers : DEFAULT_FORM_CONFIG.sellers,
+            researchBasePrompt:
+              typeof (data.config as { researchBasePrompt?: string }).researchBasePrompt === "string" &&
+              (data.config as { researchBasePrompt?: string }).researchBasePrompt?.trim()
+                ? String((data.config as { researchBasePrompt?: string }).researchBasePrompt)
+                : DEFAULT_FORM_CONFIG.researchBasePrompt,
+            extraInstructions:
+              typeof (data.config as { extraInstructions?: string }).extraInstructions === "string"
+                ? String((data.config as { extraInstructions?: string }).extraInstructions)
+                : DEFAULT_FORM_CONFIG.extraInstructions,
             quickSimilarBasePrompt:
               typeof data.config.quickSimilarBasePrompt === "string" && data.config.quickSimilarBasePrompt.trim()
                 ? data.config.quickSimilarBasePrompt
@@ -378,31 +417,94 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   }
 
   async function runSimilarSearch() {
-    setStatus(lang === "sv" ? "Kör AI-query för liknande kunder..." : "Running AI query for similar customers...");
-    const nextScope = customer?.region ? "region" : "country";
-    const res = await fetch("/api/research", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customerId: params.id,
-        scope: nextScope,
-        maxSimilar: 8,
-        basePrompt: formConfig.quickSimilarBasePrompt || DEFAULT_FORM_CONFIG.quickSimilarBasePrompt,
-        extraInstructions: formConfig.quickSimilarExtraInstructions || DEFAULT_FORM_CONFIG.quickSimilarExtraInstructions
-      })
-    });
-    if (!res.ok) {
-      setStatus(lang === "sv" ? "Kunde inte köra AI-query för liknande kunder." : "Could not run AI similar-customer query.");
-      return;
+    setSimilarLoading(true);
+    setSimilarStatus(lang === "sv" ? "AI arbetar med att hitta liknande kunder..." : "AI is finding similar customers...");
+    setSelectedSimilar(null);
+    setSelectedSimilarResearch("");
+    setSelectedSimilarResearchError("");
+
+    const initialScope: "region" | "country" = customer?.region ? "region" : "country";
+
+    const callResearch = async (scope: "region" | "country") => {
+      const res = await fetch("/api/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: params.id,
+          scope,
+          maxSimilar: 8,
+          basePrompt: formConfig.quickSimilarBasePrompt || DEFAULT_FORM_CONFIG.quickSimilarBasePrompt,
+          extraInstructions: formConfig.quickSimilarExtraInstructions || DEFAULT_FORM_CONFIG.quickSimilarExtraInstructions
+        })
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte köra AI-sökning." : "Could not run AI search."));
+      }
+      return (await res.json()) as ResearchApiResponse;
+    };
+
+    try {
+      const first = await callResearch(initialScope);
+      let rows = first.similarCustomers ?? [];
+      let scopeUsed: "region" | "country" = initialScope;
+
+      if (rows.length === 0 && initialScope === "region" && customer?.country) {
+        const fallback = await callResearch("country");
+        rows = fallback.similarCustomers ?? [];
+        scopeUsed = "country";
+      }
+
+      setSimilarResults(rows);
+      setSimilarScopeUsed(scopeUsed);
+
+      const topMatches = rows.slice(0, 3).map((item) => item.name).join(", ");
+      setSimilarStatus(
+        lang === "sv"
+          ? `Hittade ${rows.length} liknande kunder (${scopeUsed === "region" ? "region" : "land"}). ${topMatches || ""}`.trim()
+          : `Found ${rows.length} similar customers (${scopeUsed}). ${topMatches || ""}`.trim()
+      );
+    } catch (error) {
+      setSimilarResults([]);
+      setSimilarScopeUsed(null);
+      setSimilarStatus(error instanceof Error ? error.message : (lang === "sv" ? "Kunde inte köra AI-sökning." : "Could not run AI search."));
+    } finally {
+      setSimilarLoading(false);
     }
-    const data = (await res.json()) as { similarCustomers?: Array<{ name: string }> };
-    const similarRows = data.similarCustomers ?? [];
-    const topMatches = similarRows.slice(0, 3).map((item) => item.name).join(", ");
-    setStatus(
-      lang === "sv"
-        ? `Hittade ${similarRows.length} liknande kunder (${nextScope}) via AI. ${topMatches || ""}`.trim()
-        : `Found ${similarRows.length} similar customers (${nextScope}) via AI. ${topMatches || ""}`.trim()
-    );
+  }
+
+  async function runDeepResearchForSimilar(candidate: SimilarCustomer) {
+    setSelectedSimilar(candidate);
+    setSelectedSimilarResearch("");
+    setSelectedSimilarResearchError("");
+    setSelectedSimilarResearchLoading(true);
+    try {
+      const res = await fetch("/api/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: candidate.id,
+          scope: "country",
+          maxSimilar: 10,
+          basePrompt: formConfig.researchBasePrompt || DEFAULT_FORM_CONFIG.researchBasePrompt,
+          extraInstructions: formConfig.extraInstructions || DEFAULT_FORM_CONFIG.extraInstructions
+        })
+      });
+
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte köra full research." : "Could not run full research."));
+      }
+      const data = (await res.json()) as ResearchApiResponse;
+      if (data.aiError) {
+        setSelectedSimilarResearchError(data.aiError);
+      }
+      setSelectedSimilarResearch(data.aiResult?.outputText ?? "");
+    } catch (error) {
+      setSelectedSimilarResearchError(error instanceof Error ? error.message : (lang === "sv" ? "Kunde inte köra full research." : "Could not run full research."));
+    } finally {
+      setSelectedSimilarResearchLoading(false);
+    }
   }
 
   function updateNewContact(index: number, field: keyof Omit<ContactDraft, "key">, value: string) {
@@ -696,6 +798,53 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   : `Saved at ${savedAtText} by ${lastSavedBy}`}
               </p>
               {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
+              {similarLoading ? (
+                <div style={{ marginTop: "0.6rem" }}>
+                  <p className="crm-subtle">{lang === "sv" ? "AI arbetar..." : "AI is working..."}</p>
+                  <progress style={{ width: "100%" }} />
+                </div>
+              ) : null}
+              {similarStatus ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{similarStatus}</p> : null}
+              {similarResults.length > 0 ? (
+                <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                  {similarResults.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="crm-item"
+                      style={{ textAlign: "left", width: "100%", cursor: "pointer" }}
+                      onClick={() => runDeepResearchForSimilar(row)}
+                    >
+                      <div className="crm-item-head">
+                        <strong>{row.name}</strong>
+                        <span className="crm-badge">
+                          {lang === "sv" ? "Match" : "Match"}: {row.matchScore}
+                        </span>
+                      </div>
+                      <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+                        {(row.country || "-")} · {(row.region || "-")} · {(row.industry || "-")} · {(lang === "sv" ? "Potential" : "Potential")}: {row.potentialScore}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {selectedSimilar ? (
+                <section className="crm-card" style={{ marginTop: "0.8rem" }}>
+                  <h3>{lang === "sv" ? `Research: ${selectedSimilar.name}` : `Research: ${selectedSimilar.name}`}</h3>
+                  {selectedSimilarResearchLoading ? (
+                    <div style={{ marginTop: "0.6rem" }}>
+                      <p className="crm-subtle">{lang === "sv" ? "AI analyserar kund..." : "AI is analyzing customer..."}</p>
+                      <progress style={{ width: "100%" }} />
+                    </div>
+                  ) : null}
+                  {selectedSimilarResearchError ? (
+                    <p className="crm-subtle" style={{ marginTop: "0.6rem", color: "#b42318" }}>{selectedSimilarResearchError}</p>
+                  ) : null}
+                  {selectedSimilarResearch ? (
+                    <pre className="crm-pre" style={{ marginTop: "0.7rem" }}>{selectedSimilarResearch}</pre>
+                  ) : null}
+                </section>
+              ) : null}
             </form>
           </section>
 
