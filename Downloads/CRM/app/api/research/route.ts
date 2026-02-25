@@ -16,7 +16,28 @@ type Payload = {
   websites?: string[];
   scope?: "country" | "region";
   maxSimilar?: number;
+  segmentFocus?: "B2B" | "B2C" | "MIXED";
 };
+
+type SegmentFocus = "B2B" | "B2C" | "MIXED";
+
+function inferSegmentFocus(text: string): SegmentFocus {
+  const normalized = text.toLowerCase();
+  const b2bSignals = ["b2b", "enterprise", "business", "yritys", "pro", "corporate", "reseller"];
+  const b2cSignals = ["b2c", "consumer", "retail", "ecommerce", "e-commerce", "shop", "store", "butik"];
+  const b2bHits = b2bSignals.filter((signal) => normalized.includes(signal)).length;
+  const b2cHits = b2cSignals.filter((signal) => normalized.includes(signal)).length;
+
+  if (b2bHits > b2cHits && b2bHits > 0) return "B2B";
+  if (b2cHits > b2bHits && b2cHits > 0) return "B2C";
+  return "MIXED";
+}
+
+function segmentMatches(target: SegmentFocus, candidate: SegmentFocus): boolean {
+  if (target === "MIXED") return true;
+  if (candidate === "MIXED") return true;
+  return target === candidate;
+}
 
 export async function POST(req: Request) {
   try {
@@ -28,11 +49,13 @@ export async function POST(req: Request) {
     let baseCustomer = null as null | {
       id: string;
       name: string;
+      organization: string | null;
       country: string | null;
       region: string | null;
       industry: string | null;
       seller: string | null;
       website: string | null;
+      notes: string | null;
       potentialScore: number;
     };
 
@@ -42,11 +65,13 @@ export async function POST(req: Request) {
         select: {
           id: true,
           name: true,
+          organization: true,
           country: true,
           region: true,
           industry: true,
           seller: true,
           website: true,
+          notes: true,
           potentialScore: true
         }
       });
@@ -67,6 +92,20 @@ export async function POST(req: Request) {
     const seller = body.seller ?? baseCustomer?.seller ?? null;
     const industry = body.industry ?? baseCustomer?.industry ?? null;
     const potentialScore = baseCustomer?.potentialScore ?? 50;
+    const segmentFocus: SegmentFocus =
+      body.segmentFocus ??
+      inferSegmentFocus(
+        [
+          baseCustomer?.name,
+          baseCustomer?.organization,
+          baseCustomer?.industry,
+          baseCustomer?.seller,
+          baseCustomer?.notes,
+          companyName
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
 
     const urlSet = new Set<string>();
     if (baseCustomer?.website) urlSet.add(normalizeUrl(baseCustomer.website));
@@ -104,14 +143,27 @@ export async function POST(req: Request) {
       select: {
         id: true,
         name: true,
+        organization: true,
         country: true,
         region: true,
         industry: true,
         seller: true,
+        notes: true,
         potentialScore: true
       },
-      take: 100
+      take: 200
     });
+
+    const segmentFilteredCandidates = similarCandidates.filter((candidate) => {
+      const candidateSegment = inferSegmentFocus(
+        [candidate.name, candidate.organization, candidate.industry, candidate.seller, candidate.notes]
+          .filter(Boolean)
+          .join(" ")
+      );
+      return segmentMatches(segmentFocus, candidateSegment);
+    });
+
+    const rankingPool = segmentFilteredCandidates.length >= 5 ? segmentFilteredCandidates : similarCandidates;
 
     const baseForRanking = {
       id: baseCustomer?.id ?? "external-target",
@@ -123,7 +175,7 @@ export async function POST(req: Request) {
       potentialScore
     };
 
-    const similarCustomers = rankSimilarCustomers(baseForRanking, similarCandidates).slice(0, maxSimilar);
+    const similarCustomers = rankSimilarCustomers(baseForRanking, rankingPool).slice(0, maxSimilar);
 
     const aiPrompt = buildResearchPrompt({
       companyName,
@@ -131,6 +183,7 @@ export async function POST(req: Request) {
       region,
       seller,
       basePotential: potentialScore,
+      segmentFocus,
       websiteSnapshots,
       similarCustomers
     });
@@ -156,7 +209,8 @@ export async function POST(req: Request) {
         country,
         region,
         seller,
-        industry
+        industry,
+        segmentFocus
       },
       websiteSnapshots,
       similarCustomers,

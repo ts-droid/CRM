@@ -11,6 +11,7 @@ type ResearchResponse = {
     customerId: string | null;
     companyName: string;
     scope: "country" | "region";
+    segmentFocus?: "B2B" | "B2C" | "MIXED";
   };
   websiteSnapshots: Array<{ url: string; title: string | null; vendoraFitScore: number }>;
   similarCustomers: Array<{ id: string; name: string; matchScore: number; potentialScore: number }>;
@@ -91,6 +92,7 @@ function ResearchAdminContent() {
   const [researchCustomerId, setResearchCustomerId] = useState("");
   const [researchCompanyName, setResearchCompanyName] = useState("");
   const [researchScope, setResearchScope] = useState<"region" | "country">("region");
+  const [researchSegmentFocus, setResearchSegmentFocus] = useState<"AUTO" | "B2B" | "B2C" | "MIXED">("AUTO");
 
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState<string>("");
@@ -140,6 +142,7 @@ function ResearchAdminContent() {
     const customerIdParam = searchParams.get("customerId");
     const companyNameParam = searchParams.get("companyName");
     const scopeParam = searchParams.get("scope");
+    const segmentParam = searchParams.get("segmentFocus");
 
     if (customerIdParam) setResearchCustomerId(customerIdParam);
     if (companyNameParam) setResearchCompanyName(companyNameParam);
@@ -147,6 +150,11 @@ function ResearchAdminContent() {
       setResearchScope(scopeParam);
     } else {
       setResearchScope(config.defaultScope);
+    }
+    if (segmentParam === "B2B" || segmentParam === "B2C" || segmentParam === "MIXED") {
+      setResearchSegmentFocus(segmentParam);
+    } else {
+      setResearchSegmentFocus("AUTO");
     }
   }, [searchParams, config.defaultScope]);
 
@@ -166,6 +174,7 @@ function ResearchAdminContent() {
           customerId: researchCustomerId.trim() || undefined,
           companyName: researchCompanyName.trim() || undefined,
           scope: researchScope,
+          segmentFocus: researchSegmentFocus === "AUTO" ? undefined : researchSegmentFocus,
           websites: websitesRaw
             .split("\n")
             .map((line) => line.trim())
@@ -339,6 +348,23 @@ function ResearchAdminContent() {
                   <option value="region">{lang === "sv" ? "Liknande på region" : "Similar by region"}</option>
                   <option value="country">{lang === "sv" ? "Liknande på land" : "Similar by country"}</option>
                 </select>
+                <select
+                  className="crm-select"
+                  name="segmentFocus"
+                  value={researchSegmentFocus}
+                  onChange={(event) =>
+                    setResearchSegmentFocus(
+                      event.target.value === "B2B" || event.target.value === "B2C" || event.target.value === "MIXED"
+                        ? event.target.value
+                        : "AUTO"
+                    )
+                  }
+                >
+                  <option value="AUTO">{lang === "sv" ? "Segment: Auto från kund" : "Segment: Auto from customer"}</option>
+                  <option value="B2B">Segment: B2B</option>
+                  <option value="B2C">Segment: B2C</option>
+                  <option value="MIXED">{lang === "sv" ? "Segment: Mixad" : "Segment: Mixed"}</option>
+                </select>
               </div>
 
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
@@ -364,6 +390,10 @@ function ResearchAdminContent() {
                   <article className="crm-item">
                     <p className="crm-subtle">{lang === "sv" ? "Scope" : "Scope"}</p>
                     <strong>{result.query.scope === "region" ? (lang === "sv" ? "Region" : "Region") : (lang === "sv" ? "Land" : "Country")}</strong>
+                  </article>
+                  <article className="crm-item">
+                    <p className="crm-subtle">{lang === "sv" ? "Segmentfokus" : "Segment focus"}</p>
+                    <strong>{result.query.segmentFocus ?? "MIXED"}</strong>
                   </article>
                   <article className="crm-item">
                     <p className="crm-subtle">{lang === "sv" ? "Liknande bolag" : "Similar companies"}</p>

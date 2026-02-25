@@ -7,6 +7,7 @@ type PromptInput = {
   region?: string | null;
   seller?: string | null;
   basePotential?: number;
+  segmentFocus?: "B2B" | "B2C" | "MIXED";
   websiteSnapshots: WebsiteSnapshot[];
   similarCustomers: SimilarOutput[];
 };
@@ -40,6 +41,7 @@ export function buildResearchPrompt(input: PromptInput): string {
     `- Region: ${input.region ?? "-"}`,
     `- Seller owner: ${input.seller ?? "-"}`,
     `- Current potential score: ${input.basePotential ?? "-"}`,
+    `- Segment focus: ${input.segmentFocus ?? "MIXED"}`,
     "",
     "Collected website data:",
     websitesBlock || "No website data available.",
@@ -53,6 +55,8 @@ export function buildResearchPrompt(input: PromptInput): string {
     "3. Build the result in the exact markdown section structure below.",
     "4. Be practical: include contact entry paths (procurement/business sales), onboarding links, and next step.",
     "5. If a named contact is not publicly verified, use team/function + likely email format and mark confidence.",
+    "6. Segment rule: if Segment focus is B2B, prioritize B2B reseller list and Top10 as B2B-first. If B2C, do the inverse.",
+    "7. For non-focused segment, include only secondary opportunities.",
     "",
     "Required markdown structure:",
     "## Top10_Priority",
