@@ -178,6 +178,9 @@ type SimilarCustomer = {
   sourceType?: string | null;
   sourceUrl?: string | null;
   confidence?: string | null;
+  alreadyCustomer?: boolean;
+  existingCustomerId?: string | null;
+  existingCustomerName?: string | null;
 };
 
 type ResearchApiResponse = {
@@ -525,7 +528,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerId: candidate.id && !candidate.id.startsWith("external-") ? candidate.id : undefined,
+          customerId:
+            candidate.existingCustomerId ||
+            (candidate.id && !candidate.id.startsWith("external-") ? candidate.id : undefined),
           companyName: candidate.name,
           country: candidate.country ?? undefined,
           region: candidate.region ?? undefined,
@@ -866,9 +871,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                     >
                       <div className="crm-item-head">
                         <strong>{row.name}</strong>
-                        <span className="crm-badge">
-                          {lang === "sv" ? "Match" : "Match"}: {row.matchScore}
-                        </span>
+                        <div className="crm-row">
+                          {row.alreadyCustomer ? (
+                            <span className="crm-badge completed">{lang === "sv" ? "Redan kund" : "Already customer"}</span>
+                          ) : null}
+                          <span className="crm-badge">
+                            {lang === "sv" ? "Match" : "Match"}: {row.matchScore}
+                          </span>
+                        </div>
                       </div>
                       <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
                         {(row.country || "-")} · {(row.region || "-")} · {(row.industry || "-")} · {(lang === "sv" ? "Potential" : "Potential")}: {row.potentialScore}

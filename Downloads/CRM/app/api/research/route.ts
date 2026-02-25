@@ -76,6 +76,23 @@ function registryHintsForCountry(country: string | null): string[] {
   return ["Official company register", "national business directory", "industry directories"];
 }
 
+function normalizeCompanyName(value: string | null | undefined): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function websiteDomain(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    return url.hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Payload;
@@ -280,6 +297,41 @@ export async function POST(req: Request) {
           })
           .filter((item) => item.name)
           .slice(0, maxSimilar);
+      }
+
+      if (similarCustomers.length > 0) {
+        const crmCustomers = await prisma.customer.findMany({
+          select: {
+            id: true,
+            name: true,
+            website: true
+          }
+        });
+
+        const crmByName = new Map<string, { id: string; name: string }>();
+        const crmByDomain = new Map<string, { id: string; name: string }>();
+        for (const crm of crmCustomers) {
+          const normalizedName = normalizeCompanyName(crm.name);
+          if (normalizedName && !crmByName.has(normalizedName)) {
+            crmByName.set(normalizedName, { id: crm.id, name: crm.name });
+          }
+          const domain = websiteDomain(crm.website);
+          if (domain && !crmByDomain.has(domain)) {
+            crmByDomain.set(domain, { id: crm.id, name: crm.name });
+          }
+        }
+
+        similarCustomers = similarCustomers.map((candidate) => {
+          const matchByName = crmByName.get(normalizeCompanyName(candidate.name));
+          const matchByDomain = crmByDomain.get(websiteDomain(candidate.website));
+          const match = matchByDomain || matchByName || null;
+          return {
+            ...candidate,
+            alreadyCustomer: Boolean(match),
+            existingCustomerId: match?.id ?? null,
+            existingCustomerName: match?.name ?? null
+          };
+        });
       }
 
       return NextResponse.json({
