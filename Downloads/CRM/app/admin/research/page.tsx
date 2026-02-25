@@ -233,6 +233,7 @@ function ResearchAdminContent() {
   const [researchError, setResearchError] = useState<string>("");
   const [result, setResult] = useState<ResearchResponse | null>(null);
   const [researchBasePromptDraft, setResearchBasePromptDraft] = useState("");
+  const [researchExtraInstructionsDraft, setResearchExtraInstructionsDraft] = useState("");
 
   const [csvStatus, setCsvStatus] = useState<string>("");
   const [csvLoading, setCsvLoading] = useState(false);
@@ -284,6 +285,12 @@ function ResearchAdminContent() {
   }, [config.researchBasePrompt, researchBasePromptDraft]);
 
   useEffect(() => {
+    if (!researchExtraInstructionsDraft && config.extraInstructions) {
+      setResearchExtraInstructionsDraft(config.extraInstructions);
+    }
+  }, [config.extraInstructions, researchExtraInstructionsDraft]);
+
+  useEffect(() => {
     const tabParam = searchParams.get("tab");
     if (tabParam === "import-export" || tabParam === "research" || tabParam === "settings") {
       setTab(tabParam);
@@ -326,6 +333,7 @@ function ResearchAdminContent() {
           scope: researchScope,
           segmentFocus: researchSegmentFocus === "AUTO" ? undefined : researchSegmentFocus,
           basePrompt: researchBasePromptDraft.trim() || undefined,
+          extraInstructions: researchExtraInstructionsDraft.trim() || undefined,
           websites: websitesRaw
             .split("\n")
             .map((line) => line.trim())
@@ -624,6 +632,27 @@ function ResearchAdminContent() {
                   onClick={() => setResearchBasePromptDraft(config.researchBasePrompt)}
                 >
                   {lang === "sv" ? "Återställ grundprompt" : "Reset base prompt"}
+                </button>
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  value={researchExtraInstructionsDraft}
+                  onChange={(event) => setResearchExtraInstructionsDraft(event.target.value)}
+                  placeholder={
+                    lang === "sv"
+                      ? "Extra AI-instruktioner för denna körning (t.ex. Only show companies with revenue > 50 MSEK)"
+                      : "Extra AI instructions for this run (e.g. Only show companies with revenue > 50 MSEK)"
+                  }
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.4rem" }}>
+                <button
+                  className="crm-button crm-button-secondary"
+                  type="button"
+                  onClick={() => setResearchExtraInstructionsDraft(config.extraInstructions)}
+                >
+                  {lang === "sv" ? "Återställ extra instruktioner" : "Reset extra instructions"}
                 </button>
               </div>
 

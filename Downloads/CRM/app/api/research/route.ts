@@ -18,6 +18,7 @@ type Payload = {
   maxSimilar?: number;
   segmentFocus?: "B2B" | "B2C" | "MIXED";
   basePrompt?: string;
+  extraInstructions?: string;
 };
 
 type SegmentFocus = "B2B" | "B2C" | "MIXED";
@@ -190,8 +191,13 @@ export async function POST(req: Request) {
       similarCustomers
     });
 
-    const finalPrompt = settings.extraInstructions
-      ? `${aiPrompt}\n\nAdditional internal instructions:\n${settings.extraInstructions}`
+    const mergedExtraInstructions = [settings.extraInstructions, body.extraInstructions]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join("\n\n");
+
+    const finalPrompt = mergedExtraInstructions
+      ? `${aiPrompt}\n\nAdditional internal instructions:\n${mergedExtraInstructions}`
       : aiPrompt;
 
     let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
