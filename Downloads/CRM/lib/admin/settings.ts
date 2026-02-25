@@ -11,6 +11,15 @@ export type ResearchConfig = {
   countries: string[];
   sellers: string[];
   requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
+  remindersEnabled: boolean;
+  reminderDaysBeforeDeadline: number;
+  inactivityReminderDays: number;
+  reminderRecipients: string[];
+  notifyViaSlack: boolean;
+  slackWebhookUrl: string;
+  notifyViaEmail: boolean;
+  gmailFrom: string;
+  gmailReplyTo: string;
 };
 
 export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
@@ -21,7 +30,16 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
   industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
   countries: ["SE", "NO", "DK", "FI"],
   sellers: ["Team Nordics"],
-  requiredCustomerFields: ["name", "industry", "country", "seller"]
+  requiredCustomerFields: ["name", "industry", "country", "seller"],
+  remindersEnabled: true,
+  reminderDaysBeforeDeadline: 7,
+  inactivityReminderDays: 30,
+  reminderRecipients: [],
+  notifyViaSlack: false,
+  slackWebhookUrl: "",
+  notifyViaEmail: false,
+  gmailFrom: "",
+  gmailReplyTo: ""
 };
 
 function uniqueTrimmed(list: unknown, max = 50): string[] {
@@ -44,6 +62,15 @@ function normalizeRequiredFields(input: unknown): Array<"name" | "industry" | "c
   return result.length ? result : DEFAULT_RESEARCH_CONFIG.requiredCustomerFields;
 }
 
+function normalizePositiveInt(input: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(input);
+  if (!Number.isFinite(parsed)) return fallback;
+  const rounded = Math.round(parsed);
+  if (rounded < min) return min;
+  if (rounded > max) return max;
+  return rounded;
+}
+
 export function normalizeResearchConfig(input: unknown): ResearchConfig {
   const value = typeof input === "object" && input ? (input as Record<string, unknown>) : {};
 
@@ -57,7 +84,16 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
     industries: uniqueTrimmed(value.industries, 50),
     countries: uniqueTrimmed(value.countries, 50),
     sellers: uniqueTrimmed(value.sellers, 50),
-    requiredCustomerFields: normalizeRequiredFields(value.requiredCustomerFields)
+    requiredCustomerFields: normalizeRequiredFields(value.requiredCustomerFields),
+    remindersEnabled: value.remindersEnabled !== false,
+    reminderDaysBeforeDeadline: normalizePositiveInt(value.reminderDaysBeforeDeadline, 7, 1, 60),
+    inactivityReminderDays: normalizePositiveInt(value.inactivityReminderDays, 30, 1, 365),
+    reminderRecipients: uniqueTrimmed(value.reminderRecipients, 40),
+    notifyViaSlack: value.notifyViaSlack === true,
+    slackWebhookUrl: String(value.slackWebhookUrl ?? "").trim(),
+    notifyViaEmail: value.notifyViaEmail === true,
+    gmailFrom: String(value.gmailFrom ?? "").trim(),
+    gmailReplyTo: String(value.gmailReplyTo ?? "").trim()
   };
 }
 

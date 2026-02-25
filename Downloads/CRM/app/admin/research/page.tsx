@@ -72,6 +72,15 @@ type ResearchConfig = {
   countries: string[];
   sellers: string[];
   requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
+  remindersEnabled: boolean;
+  reminderDaysBeforeDeadline: number;
+  inactivityReminderDays: number;
+  reminderRecipients: string[];
+  notifyViaSlack: boolean;
+  slackWebhookUrl: string;
+  notifyViaEmail: boolean;
+  gmailFrom: string;
+  gmailReplyTo: string;
 };
 
 const EMPTY_CONFIG: ResearchConfig = {
@@ -82,7 +91,16 @@ const EMPTY_CONFIG: ResearchConfig = {
   industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
   countries: ["SE", "NO", "DK", "FI"],
   sellers: ["Team Nordics"],
-  requiredCustomerFields: ["name", "industry", "country", "seller"]
+  requiredCustomerFields: ["name", "industry", "country", "seller"],
+  remindersEnabled: true,
+  reminderDaysBeforeDeadline: 7,
+  inactivityReminderDays: 30,
+  reminderRecipients: [],
+  notifyViaSlack: false,
+  slackWebhookUrl: "",
+  notifyViaEmail: false,
+  gmailFrom: "",
+  gmailReplyTo: ""
 };
 
 function ResearchAdminContent() {
@@ -104,6 +122,8 @@ function ResearchAdminContent() {
   const [config, setConfig] = useState<ResearchConfig>(EMPTY_CONFIG);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsStatus, setSettingsStatus] = useState<string>("");
+  const [remindersRunning, setRemindersRunning] = useState(false);
+  const [remindersStatus, setRemindersStatus] = useState("");
 
   const labels = useMemo(
     () => ({
@@ -261,7 +281,19 @@ function ResearchAdminContent() {
         .filter(Boolean),
       requiredCustomerFields: (form.getAll("requiredCustomerFields") as string[]).filter(Boolean) as Array<
         "name" | "industry" | "country" | "seller"
-      >
+      >,
+      remindersEnabled: form.get("remindersEnabled") === "on",
+      reminderDaysBeforeDeadline: Number(form.get("reminderDaysBeforeDeadline") || 7),
+      inactivityReminderDays: Number(form.get("inactivityReminderDays") || 30),
+      reminderRecipients: String(form.get("reminderRecipients") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+      notifyViaSlack: form.get("notifyViaSlack") === "on",
+      slackWebhookUrl: String(form.get("slackWebhookUrl") ?? "").trim(),
+      notifyViaEmail: form.get("notifyViaEmail") === "on",
+      gmailFrom: String(form.get("gmailFrom") ?? "").trim(),
+      gmailReplyTo: String(form.get("gmailReplyTo") ?? "").trim()
     };
 
     try {
@@ -280,6 +312,27 @@ function ResearchAdminContent() {
       setSettingsStatus(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSettingsLoading(false);
+    }
+  }
+
+  async function runRemindersNow() {
+    setRemindersRunning(true);
+    setRemindersStatus("");
+    try {
+      const res = await fetch("/api/admin/reminders/run", { method: "POST" });
+      const data = (await res.json()) as { sent?: number; skipped?: number; error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to run reminders");
+      }
+      setRemindersStatus(
+        lang === "sv"
+          ? `Påminnelser körda. Skickade: ${data.sent ?? 0}, redan hanterade: ${data.skipped ?? 0}.`
+          : `Reminders executed. Sent: ${data.sent ?? 0}, already handled: ${data.skipped ?? 0}.`
+      );
+    } catch (error) {
+      setRemindersStatus(error instanceof Error ? error.message : "Failed to run reminders");
+    } finally {
+      setRemindersRunning(false);
     }
   }
 
@@ -577,6 +630,86 @@ function ResearchAdminContent() {
                 defaultValue={config.extraInstructions}
                 placeholder={lang === "sv" ? "Extra AI-instruktioner" : "Extra AI instructions"}
               />
+            </div>
+            <div style={{ marginTop: "0.8rem" }}>
+              <p className="crm-subtle">{lang === "sv" ? "Påminnelser och notifieringar" : "Reminders and notifications"}</p>
+              <div className="crm-row" style={{ marginTop: "0.5rem" }}>
+                <label className="crm-check">
+                  <input type="checkbox" name="remindersEnabled" defaultChecked={config.remindersEnabled} />
+                  <span>{lang === "sv" ? "Aktivera automatiska påminnelser" : "Enable automatic reminders"}</span>
+                </label>
+                <label className="crm-check">
+                  <input type="checkbox" name="notifyViaSlack" defaultChecked={config.notifyViaSlack} />
+                  <span>Slack</span>
+                </label>
+                <label className="crm-check">
+                  <input type="checkbox" name="notifyViaEmail" defaultChecked={config.notifyViaEmail} />
+                  <span>Gmail (SMTP)</span>
+                </label>
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  name="reminderDaysBeforeDeadline"
+                  type="number"
+                  min={1}
+                  max={60}
+                  defaultValue={config.reminderDaysBeforeDeadline}
+                  placeholder={lang === "sv" ? "Dagar före deadline" : "Days before deadline"}
+                />
+                <input
+                  className="crm-input"
+                  name="inactivityReminderDays"
+                  type="number"
+                  min={1}
+                  max={365}
+                  defaultValue={config.inactivityReminderDays}
+                  placeholder={lang === "sv" ? "Dagar utan aktivitet" : "Days without activity"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="reminderRecipients"
+                  defaultValue={config.reminderRecipients.join("\n")}
+                  placeholder={lang === "sv" ? "E-postmottagare, en per rad" : "Reminder email recipients, one per line"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  name="slackWebhookUrl"
+                  defaultValue={config.slackWebhookUrl}
+                  placeholder={lang === "sv" ? "Slack webhook URL" : "Slack webhook URL"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  name="gmailFrom"
+                  defaultValue={config.gmailFrom}
+                  placeholder={lang === "sv" ? "Från-adress (Gmail)" : "From address (Gmail)"}
+                />
+                <input
+                  className="crm-input"
+                  name="gmailReplyTo"
+                  defaultValue={config.gmailReplyTo}
+                  placeholder={lang === "sv" ? "Reply-to (valfritt)" : "Reply-to (optional)"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <button
+                  className="crm-button crm-button-secondary"
+                  type="button"
+                  onClick={runRemindersNow}
+                  disabled={remindersRunning}
+                >
+                  {remindersRunning
+                    ? (lang === "sv" ? "Kör..." : "Running...")
+                    : (lang === "sv" ? "Kör påminnelser nu" : "Run reminders now")}
+                </button>
+              </div>
+              {remindersStatus ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{remindersStatus}</p> : null}
             </div>
             <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={settingsLoading}>
               {settingsLoading ? (lang === "sv" ? "Sparar..." : "Saving...") : (lang === "sv" ? "Spara inställningar" : "Save settings")}
