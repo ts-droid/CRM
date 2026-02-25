@@ -164,7 +164,7 @@ type ContactDraft = {
 };
 
 type SimilarCustomer = {
-  id: string;
+  id?: string;
   name: string;
   country: string | null;
   region: string | null;
@@ -172,6 +172,12 @@ type SimilarCustomer = {
   seller: string | null;
   potentialScore: number;
   matchScore: number;
+  website?: string | null;
+  organizationNumber?: string | null;
+  reason?: string | null;
+  sourceType?: string | null;
+  sourceUrl?: string | null;
+  confidence?: string | null;
 };
 
 type ResearchApiResponse = {
@@ -468,6 +474,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           customerId: params.id,
           scope,
           maxSimilar: 8,
+          externalOnly: true,
           basePrompt: formConfig.quickSimilarBasePrompt || DEFAULT_FORM_CONFIG.quickSimilarBasePrompt,
           extraInstructions: formConfig.quickSimilarExtraInstructions || DEFAULT_FORM_CONFIG.quickSimilarExtraInstructions
         })
@@ -518,7 +525,13 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerId: candidate.id,
+          customerId: candidate.id && !candidate.id.startsWith("external-") ? candidate.id : undefined,
+          companyName: candidate.name,
+          country: candidate.country ?? undefined,
+          region: candidate.region ?? undefined,
+          industry: candidate.industry ?? undefined,
+          websites: candidate.website ? [candidate.website] : [],
+          externalOnly: true,
           scope: "country",
           maxSimilar: 10,
           basePrompt: formConfig.researchBasePrompt || DEFAULT_FORM_CONFIG.researchBasePrompt,
@@ -845,7 +858,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 <div className="crm-list" style={{ marginTop: "0.7rem" }}>
                   {similarResults.map((row) => (
                     <button
-                      key={row.id}
+                      key={`${row.id || row.name}-${row.website || ""}`}
                       type="button"
                       className="crm-item"
                       style={{ textAlign: "left", width: "100%", cursor: "pointer" }}
@@ -860,6 +873,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                       <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
                         {(row.country || "-")} · {(row.region || "-")} · {(row.industry || "-")} · {(lang === "sv" ? "Potential" : "Potential")}: {row.potentialScore}
                       </p>
+                      {(row.organizationNumber || row.sourceUrl || row.reason) ? (
+                        <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                          {row.organizationNumber ? `${lang === "sv" ? "Org.nr" : "Org no"}: ${row.organizationNumber} · ` : ""}
+                          {row.sourceType ? `${lang === "sv" ? "Källa" : "Source"}: ${row.sourceType}` : ""}
+                          {row.sourceUrl ? ` · ${row.sourceUrl}` : ""}
+                          {row.confidence ? ` · ${lang === "sv" ? "Säkerhet" : "Confidence"}: ${row.confidence}` : ""}
+                        </p>
+                      ) : null}
                     </button>
                   ))}
                 </div>
