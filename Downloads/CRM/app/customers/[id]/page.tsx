@@ -72,6 +72,34 @@ type SalesResponse = {
   }>;
 };
 
+type FormConfig = {
+  industries: string[];
+  countries: string[];
+};
+
+type CustomerRegionRow = {
+  country: string | null;
+  region: string | null;
+};
+
+const DEFAULT_FORM_CONFIG: FormConfig = {
+  industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
+  countries: ["SE", "NO", "DK", "FI"]
+};
+
+function buildOptionList(...lists: Array<Array<string | null | undefined> | undefined>): string[] {
+  const seen = new Set<string>();
+  for (const list of lists) {
+    if (!list) continue;
+    for (const item of list) {
+      const value = String(item ?? "").trim();
+      if (!value) continue;
+      seen.add(value);
+    }
+  }
+  return Array.from(seen).sort((a, b) => a.localeCompare(b));
+}
+
 type ContactDraft = {
   key: string;
   name: string;
@@ -108,6 +136,10 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [salesData, setSalesData] = useState<SalesResponse | null>(null);
   const [salesLoading, setSalesLoading] = useState(false);
   const [salesError, setSalesError] = useState("");
+  const [formConfig, setFormConfig] = useState<FormConfig>(DEFAULT_FORM_CONFIG);
+  const [regionsByCountry, setRegionsByCountry] = useState<Record<string, string[]>>({});
+  const [allRegions, setAllRegions] = useState<string[]>([]);
+  const [selectedCountry, setSelectedCountry] = useState("");
   const [loading, setLoading] = useState(true);
 
   async function loadCustomer() {
@@ -121,8 +153,54 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       return;
     }
 
-    setCustomer((await res.json()) as Customer);
+    const data = (await res.json()) as Customer;
+    setCustomer(data);
+    setSelectedCountry(data.country ?? "");
     setLoading(false);
+  }
+
+  async function loadFormOptions() {
+    try {
+      const [settingsRes, customersRes] = await Promise.all([
+        fetch("/api/admin/settings", { cache: "no-store" }),
+        fetch("/api/customers?sort=name_asc", { cache: "no-store" })
+      ]);
+
+      if (settingsRes.ok) {
+        const data = (await settingsRes.json()) as { config?: FormConfig };
+        if (data.config) {
+          setFormConfig({
+            industries: Array.isArray(data.config.industries) ? data.config.industries : DEFAULT_FORM_CONFIG.industries,
+            countries: Array.isArray(data.config.countries) ? data.config.countries : DEFAULT_FORM_CONFIG.countries
+          });
+        }
+      }
+
+      if (customersRes.ok) {
+        const rows = (await customersRes.json()) as CustomerRegionRow[];
+        const nextRegionsByCountry: Record<string, string[]> = {};
+        const regionPool: string[] = [];
+
+        for (const row of rows) {
+          const country = String(row.country ?? "").trim();
+          const region = String(row.region ?? "").trim();
+          if (!region) continue;
+          regionPool.push(region);
+          if (!country) continue;
+          if (!nextRegionsByCountry[country]) nextRegionsByCountry[country] = [];
+          nextRegionsByCountry[country].push(region);
+        }
+
+        for (const [country, regions] of Object.entries(nextRegionsByCountry)) {
+          nextRegionsByCountry[country] = buildOptionList(regions);
+        }
+
+        setRegionsByCountry(nextRegionsByCountry);
+        setAllRegions(buildOptionList(regionPool));
+      }
+    } catch {
+      // Keep defaults
+    }
   }
 
   async function loadActivities() {
@@ -152,9 +230,15 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
   useEffect(() => {
     loadCustomer();
+    loadFormOptions();
     loadActivities();
     loadSales();
   }, [params.id, lang]);
+
+  const industryOptions = buildOptionList(formConfig.industries, [customer?.industry]);
+  const countryOptions = buildOptionList(formConfig.countries, [customer?.country]);
+  const scopedRegionOptions = selectedCountry ? regionsByCountry[selectedCountry] ?? [] : allRegions;
+  const regionOptions = buildOptionList(scopedRegionOptions, [customer?.region]);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -340,11 +424,37 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               <div className="crm-row">
                 <input className="crm-input" name="name" defaultValue={customer.name} placeholder={lang === "sv" ? "Namn" : "Name"} />
                 <input className="crm-input" name="organization" defaultValue={customer.organization ?? ""} placeholder={lang === "sv" ? "Organisation" : "Organization"} />
-                <input className="crm-input" name="industry" defaultValue={customer.industry ?? ""} placeholder={lang === "sv" ? "Bransch" : "Industry"} />
+                <select className="crm-select" name="industry" defaultValue={customer.industry ?? ""}>
+                  <option value="">{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
+                  {industryOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-                <input className="crm-input" name="country" defaultValue={customer.country ?? ""} placeholder={lang === "sv" ? "Land" : "Country"} />
-                <input className="crm-input" name="region" defaultValue={customer.region ?? ""} placeholder={lang === "sv" ? "Region" : "Region"} />
+                <select
+                  className="crm-select"
+                  name="country"
+                  defaultValue={customer.country ?? ""}
+                  onChange={(event) => setSelectedCountry(event.target.value)}
+                >
+                  <option value="">{lang === "sv" ? "Välj land" : "Select country"}</option>
+                  {countryOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                <select className="crm-select" name="region" defaultValue={customer.region ?? ""}>
+                  <option value="">{lang === "sv" ? "Välj region" : "Select region"}</option>
+                  {regionOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
                 <input className="crm-input" name="seller" defaultValue={customer.seller ?? ""} placeholder={lang === "sv" ? "Säljare" : "Seller"} />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
