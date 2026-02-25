@@ -2,16 +2,20 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
-  const contacts = await prisma.contact.findMany({
-    include: {
-      customer: true
-    },
-    orderBy: {
-      createdAt: "desc"
-    }
-  });
+  try {
+    const contacts = await prisma.contact.findMany({
+      include: {
+        customer: true
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
 
-  return NextResponse.json(contacts);
+    return NextResponse.json(contacts);
+  } catch {
+    return NextResponse.json([]);
+  }
 }
 
 export async function POST(req: Request) {

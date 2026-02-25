@@ -23,16 +23,25 @@ export async function GET(req: Request) {
       ? [{ updatedAt: "desc" as const }]
       : [{ createdAt: "desc" as const }];
 
-  const customers = await prisma.customer.findMany({
-    where,
-    include: {
-      contacts: true,
-      plans: true
-    },
-    orderBy
-  });
+  try {
+    const customers = await prisma.customer.findMany({
+      where,
+      include: {
+        contacts: true,
+        plans: true
+      },
+      orderBy
+    });
 
-  return NextResponse.json(customers);
+    return NextResponse.json(customers);
+  } catch {
+    const customers = await prisma.customer.findMany({
+      where,
+      orderBy
+    });
+
+    return NextResponse.json(customers);
+  }
 }
 
 export async function POST(req: Request) {

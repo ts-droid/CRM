@@ -2,13 +2,30 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const customer = await prisma.customer.findUnique({
-    where: { id: params.id },
-    include: {
-      contacts: true,
-      plans: true
+  let customer:
+    | (Awaited<ReturnType<typeof prisma.customer.findUnique>> & {
+        contacts?: unknown[];
+        plans?: unknown[];
+      })
+    | null = null;
+
+  try {
+    customer = await prisma.customer.findUnique({
+      where: { id: params.id },
+      include: {
+        contacts: true,
+        plans: true
+      }
+    });
+  } catch {
+    customer = await prisma.customer.findUnique({
+      where: { id: params.id }
+    });
+
+    if (customer) {
+      customer = { ...customer, contacts: [], plans: [] };
     }
-  });
+  }
 
   if (!customer) {
     return NextResponse.json({ error: "Customer not found" }, { status: 404 });
