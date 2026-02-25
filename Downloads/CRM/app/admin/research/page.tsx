@@ -19,6 +19,15 @@ type ResearchResponse = {
   aiError?: string | null;
 };
 
+function extractBullets(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
+    .map((line) => line.replace(/^[-*]\s+/, "").replace(/^\d+\.\s+/, ""))
+    .slice(0, 8);
+}
+
 type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
@@ -68,6 +77,9 @@ function ResearchAdminContent() {
     }),
     [lang]
   );
+
+  const aiText = result?.aiResult?.outputText ?? "";
+  const aiBullets = useMemo(() => extractBullets(aiText), [aiText]);
 
   async function loadSettings() {
     try {
@@ -308,12 +320,34 @@ function ResearchAdminContent() {
           {result ? (
             <>
               <section className="crm-card">
+                <h3>{lang === "sv" ? "Researchsammanfattning" : "Research summary"}</h3>
+                <div className="crm-grid" style={{ marginTop: "0.7rem" }}>
+                  <article className="crm-item">
+                    <p className="crm-subtle">{lang === "sv" ? "Bolag" : "Company"}</p>
+                    <strong>{result.query.companyName}</strong>
+                  </article>
+                  <article className="crm-item">
+                    <p className="crm-subtle">{lang === "sv" ? "Scope" : "Scope"}</p>
+                    <strong>{result.query.scope === "region" ? (lang === "sv" ? "Region" : "Region") : (lang === "sv" ? "Land" : "Country")}</strong>
+                  </article>
+                  <article className="crm-item">
+                    <p className="crm-subtle">{lang === "sv" ? "Liknande bolag" : "Similar companies"}</p>
+                    <strong>{result.similarCustomers.length}</strong>
+                  </article>
+                  <article className="crm-item">
+                    <p className="crm-subtle">{lang === "sv" ? "Datakällor" : "Data sources"}</p>
+                    <strong>{result.websiteSnapshots.length}</strong>
+                  </article>
+                </div>
+              </section>
+
+              <section className="crm-card">
                 <h3>{lang === "sv" ? "Liknande bolag" : "Similar companies"}</h3>
                 <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-                  {result.similarCustomers.map((item) => (
+                  {result.similarCustomers.map((item, index) => (
                     <article key={item.id} className="crm-item">
                       <div className="crm-item-head">
-                        <strong>{item.name}</strong>
+                        <strong>{index + 1}. {item.name}</strong>
                         <span className="crm-badge">Match {item.matchScore}</span>
                       </div>
                       <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
@@ -322,6 +356,43 @@ function ResearchAdminContent() {
                     </article>
                   ))}
                 </div>
+              </section>
+
+              <section className="crm-card">
+                <h3>{lang === "sv" ? "Källor och signaler" : "Sources and signals"}</h3>
+                <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                  {result.websiteSnapshots.length === 0 ? (
+                    <p className="crm-empty">{lang === "sv" ? "Inga webbkällor hittades." : "No web sources found."}</p>
+                  ) : (
+                    result.websiteSnapshots.map((item) => (
+                      <article key={item.url} className="crm-item">
+                        <div className="crm-item-head">
+                          <a href={item.url} target="_blank" rel="noreferrer" className="crm-link-inline">{item.title || item.url}</a>
+                          <span className="crm-badge">{lang === "sv" ? "Fit" : "Fit"}: {item.vendoraFitScore}</span>
+                        </div>
+                        <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>{item.url}</p>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className="crm-card">
+                <h3>{lang === "sv" ? "AI-rekommendationer" : "AI recommendations"}</h3>
+                {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318" }}>{result.aiError}</p> : null}
+                {aiBullets.length > 0 ? (
+                  <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                    {aiBullets.map((bullet, index) => (
+                      <article key={`${bullet}-${index}`} className="crm-item">
+                        <p>{index + 1}. {bullet}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
+                    {lang === "sv" ? "Ingen strukturerad rekommendation hittades, se full AI-output nedan." : "No structured recommendation found, see full AI output below."}
+                  </p>
+                )}
               </section>
 
               <section className="crm-card">
