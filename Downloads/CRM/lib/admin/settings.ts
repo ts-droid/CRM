@@ -55,12 +55,15 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
     "Lifestyle & Design Retail",
     "Marketplace / Pure E-tail"
   ],
-  countries: ["SE", "NO", "DK", "FI"],
+  countries: ["SE", "NO", "DK", "FI", "EE", "LV", "LT"],
   regionsByCountry: [
     { country: "SE", regions: ["Stockholm", "Vastra Gotaland", "Skane", "Ostergotland", "Jonkoping", "Uppsala", "Halland", "Sodermanland"] },
     { country: "NO", regions: ["Oslo", "Viken", "Vestland", "Rogaland", "Trondelag", "Agder", "Innlandet", "Troms og Finnmark"] },
     { country: "DK", regions: ["Hovedstaden", "Sjaelland", "Syddanmark", "Midtjylland", "Nordjylland"] },
-    { country: "FI", regions: ["Uusimaa", "Pirkanmaa", "Varsinais-Suomi", "Pohjois-Pohjanmaa", "Keski-Suomi", "Satakunta", "Pohjanmaa", "Lappi"] }
+    { country: "FI", regions: ["Uusimaa", "Pirkanmaa", "Varsinais-Suomi", "Pohjois-Pohjanmaa", "Keski-Suomi", "Satakunta", "Pohjanmaa", "Lappi"] },
+    { country: "EE", regions: ["Harju", "Tartu", "Ida-Viru", "Parnu", "Laane-Viru", "Viljandi", "Rapla", "Saare"] },
+    { country: "LV", regions: ["Riga", "Pieriga", "Kurzeme", "Zemgale", "Vidzeme", "Latgale"] },
+    { country: "LT", regions: ["Vilnius", "Kaunas", "Klaipeda", "Siauliai", "Panevezys", "Alytus", "Marijampole", "Utena", "Taurage", "Telsiai"] }
   ],
   sellers: ["Team Nordics"],
   requiredCustomerFields: ["name", "industry", "country", "seller"],
@@ -124,6 +127,26 @@ function normalizePositiveInt(input: unknown, fallback: number, min: number, max
   return rounded;
 }
 
+function mergeCountriesWithDefaults(countries: string[]): string[] {
+  const combined = [...countries, ...DEFAULT_RESEARCH_CONFIG.countries];
+  return uniqueTrimmed(combined, 50);
+}
+
+function mergeRegionsByCountryWithDefaults(regionsByCountry: RegionsByCountry): RegionsByCountry {
+  const merged = new Map<string, string[]>();
+
+  for (const row of DEFAULT_RESEARCH_CONFIG.regionsByCountry) {
+    merged.set(row.country, uniqueTrimmed(row.regions, 120));
+  }
+
+  for (const row of regionsByCountry) {
+    const existing = merged.get(row.country) ?? [];
+    merged.set(row.country, uniqueTrimmed([...existing, ...row.regions], 120));
+  }
+
+  return Array.from(merged.entries()).map(([country, regions]) => ({ country, regions }));
+}
+
 export function normalizeResearchConfig(input: unknown): ResearchConfig {
   const value = typeof input === "object" && input ? (input as Record<string, unknown>) : {};
 
@@ -135,8 +158,8 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
     extraInstructions: String(value.extraInstructions ?? "").trim(),
     defaultScope,
     industries: uniqueTrimmed(value.industries, 50),
-    countries: uniqueTrimmed(value.countries, 50),
-    regionsByCountry: normalizeRegionsByCountry(value.regionsByCountry),
+    countries: mergeCountriesWithDefaults(uniqueTrimmed(value.countries, 50)),
+    regionsByCountry: mergeRegionsByCountryWithDefaults(normalizeRegionsByCountry(value.regionsByCountry)),
     sellers: uniqueTrimmed(value.sellers, 50),
     requiredCustomerFields: normalizeRequiredFields(value.requiredCustomerFields),
     remindersEnabled: value.remindersEnabled !== false,

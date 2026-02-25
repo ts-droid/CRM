@@ -48,7 +48,7 @@ const DEFAULT_CONFIG: FormConfig = {
     "Lifestyle & Design Retail",
     "Marketplace / Pure E-tail"
   ],
-  countries: ["SE", "NO", "DK", "FI"],
+  countries: ["SE", "NO", "DK", "FI", "EE", "LV", "LT"],
   sellers: ["Team Nordics"],
   requiredCustomerFields: ["name", "industry", "country", "seller"]
 };
