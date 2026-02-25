@@ -9,8 +9,10 @@ export async function GET(req: Request) {
   const seller = searchParams.get("seller");
   const industry = searchParams.get("industry");
   const q = searchParams.get("q");
-  const potentialMin = Number(searchParams.get("potentialMin") ?? "");
-  const potentialMax = Number(searchParams.get("potentialMax") ?? "");
+  const potentialMinRaw = searchParams.get("potentialMin");
+  const potentialMaxRaw = searchParams.get("potentialMax");
+  const potentialMin = potentialMinRaw && potentialMinRaw.trim() !== "" ? Number(potentialMinRaw) : Number.NaN;
+  const potentialMax = potentialMaxRaw && potentialMaxRaw.trim() !== "" ? Number(potentialMaxRaw) : Number.NaN;
   const sort = searchParams.get("sort");
 
   const where = {
