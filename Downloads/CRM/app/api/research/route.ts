@@ -17,6 +17,7 @@ type Payload = {
   scope?: "country" | "region";
   maxSimilar?: number;
   segmentFocus?: "B2B" | "B2C" | "MIXED";
+  basePrompt?: string;
 };
 
 type SegmentFocus = "B2B" | "B2C" | "MIXED";
@@ -184,6 +185,7 @@ export async function POST(req: Request) {
       seller,
       basePotential: potentialScore,
       segmentFocus,
+      basePrompt: body.basePrompt?.trim() || settings.researchBasePrompt,
       websiteSnapshots,
       similarCustomers
     });

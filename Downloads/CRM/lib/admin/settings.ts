@@ -15,6 +15,7 @@ export type SellerAssignments = Array<{
 export type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
+  researchBasePrompt: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
   industries: string[];
@@ -37,6 +38,19 @@ export type ResearchConfig = {
 export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://www.vendora.se"],
   brandWebsites: [],
+  researchBasePrompt:
+    "You are a senior GTM & Channel Analyst for Vendora Nordic.\n\n" +
+    "Your task is to evaluate one selected reseller account and produce a practical expansion plan:\n" +
+    "1) Score assortment fit (FitScore 0-100).\n" +
+    "2) Quantify Year-1 potential (Low/Base/High range, SEK unless specified).\n" +
+    "3) Recommend concrete product families/brands to pitch.\n" +
+    "4) Propose and score similar targets using the same scoring logic.\n\n" +
+    "Rules:\n" +
+    "- English only.\n" +
+    "- Do not invent facts.\n" +
+    "- Mark unknowns as Estimated + confidence.\n" +
+    "- If key data is missing, stay conservative.\n" +
+    "- Keep output CRM-ready and actionable.",
   extraInstructions: "",
   defaultScope: "region",
   industries: [
@@ -188,6 +202,7 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
   return {
     vendorWebsites: uniqueTrimmed(value.vendorWebsites, 30),
     brandWebsites: uniqueTrimmed(value.brandWebsites, 60),
+    researchBasePrompt: String(value.researchBasePrompt ?? "").trim(),
     extraInstructions: String(value.extraInstructions ?? "").trim(),
     defaultScope,
     industries: uniqueTrimmed(value.industries, 50),

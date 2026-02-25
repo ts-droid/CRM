@@ -66,6 +66,7 @@ function parseMarkdownSections(text: string): MarkdownSection[] {
 type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
+  researchBasePrompt: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
   industries: string[];
@@ -88,6 +89,19 @@ type ResearchConfig = {
 const EMPTY_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://www.vendora.se"],
   brandWebsites: [],
+  researchBasePrompt:
+    "You are a senior GTM & Channel Analyst for Vendora Nordic.\n\n" +
+    "Your task is to evaluate one selected reseller account and produce a practical expansion plan:\n" +
+    "1) Score assortment fit (FitScore 0-100).\n" +
+    "2) Quantify Year-1 potential (Low/Base/High range, SEK unless specified).\n" +
+    "3) Recommend concrete product families/brands to pitch.\n" +
+    "4) Propose and score similar targets using the same scoring logic.\n\n" +
+    "Rules:\n" +
+    "- English only.\n" +
+    "- Do not invent facts.\n" +
+    "- Mark unknowns as Estimated + confidence.\n" +
+    "- If key data is missing, stay conservative.\n" +
+    "- Keep output CRM-ready and actionable.",
   extraInstructions: "",
   defaultScope: "region",
   industries: [
@@ -218,6 +232,7 @@ function ResearchAdminContent() {
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState<string>("");
   const [result, setResult] = useState<ResearchResponse | null>(null);
+  const [researchBasePromptDraft, setResearchBasePromptDraft] = useState("");
 
   const [csvStatus, setCsvStatus] = useState<string>("");
   const [csvLoading, setCsvLoading] = useState(false);
@@ -263,6 +278,12 @@ function ResearchAdminContent() {
   }, []);
 
   useEffect(() => {
+    if (!researchBasePromptDraft && config.researchBasePrompt) {
+      setResearchBasePromptDraft(config.researchBasePrompt);
+    }
+  }, [config.researchBasePrompt, researchBasePromptDraft]);
+
+  useEffect(() => {
     const tabParam = searchParams.get("tab");
     if (tabParam === "import-export" || tabParam === "research" || tabParam === "settings") {
       setTab(tabParam);
@@ -304,6 +325,7 @@ function ResearchAdminContent() {
           companyName: researchCompanyName.trim() || undefined,
           scope: researchScope,
           segmentFocus: researchSegmentFocus === "AUTO" ? undefined : researchSegmentFocus,
+          basePrompt: researchBasePromptDraft.trim() || undefined,
           websites: websitesRaw
             .split("\n")
             .map((line) => line.trim())
@@ -374,6 +396,7 @@ function ResearchAdminContent() {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
+      researchBasePrompt: String(form.get("researchBasePrompt") ?? "").trim(),
       extraInstructions: String(form.get("extraInstructions") ?? "").trim(),
       defaultScope: String(form.get("defaultScope") ?? "region") === "country" ? "country" : "region",
       industries: String(form.get("industries") ?? "")
@@ -585,6 +608,23 @@ function ResearchAdminContent() {
 
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <textarea className="crm-textarea" name="websites" placeholder={lang === "sv" ? "Extra webbkällor, en URL per rad" : "Extra website sources, one URL per line"} />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  value={researchBasePromptDraft}
+                  onChange={(event) => setResearchBasePromptDraft(event.target.value)}
+                  placeholder={lang === "sv" ? "Grundprompt för denna körning" : "Base prompt for this run"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.4rem" }}>
+                <button
+                  className="crm-button crm-button-secondary"
+                  type="button"
+                  onClick={() => setResearchBasePromptDraft(config.researchBasePrompt)}
+                >
+                  {lang === "sv" ? "Återställ grundprompt" : "Reset base prompt"}
+                </button>
               </div>
 
               <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={researchLoading}>
@@ -840,6 +880,14 @@ function ResearchAdminContent() {
                   <span>Seller</span>
                 </label>
               </div>
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                name="researchBasePrompt"
+                defaultValue={config.researchBasePrompt}
+                placeholder={lang === "sv" ? "Global grundprompt för research" : "Global base prompt for research"}
+              />
             </div>
             <div className="crm-row" style={{ marginTop: "0.6rem" }}>
               <textarea

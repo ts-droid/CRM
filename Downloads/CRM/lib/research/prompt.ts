@@ -8,6 +8,7 @@ type PromptInput = {
   seller?: string | null;
   basePotential?: number;
   segmentFocus?: "B2B" | "B2C" | "MIXED";
+  basePrompt?: string;
   websiteSnapshots: WebsiteSnapshot[];
   similarCustomers: SimilarOutput[];
 };
@@ -32,9 +33,9 @@ export function buildResearchPrompt(input: PromptInput): string {
     .join("\n");
 
   return [
-    "You are a senior GTM analyst for Vendora Nordic.",
-    "Task: produce a market-facing reseller target list and outreach package.",
+    input.basePrompt?.trim() || "You are a senior GTM analyst for Vendora Nordic.",
     "",
+    "RUNTIME DATA (from CRM):",
     "Target company context:",
     `- Name: ${input.companyName}`,
     `- Country: ${input.country ?? "-"}`,
