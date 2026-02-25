@@ -17,6 +17,8 @@ export type ResearchConfig = {
   brandWebsites: string[];
   researchBasePrompt: string;
   quickSimilarBasePrompt: string;
+  quickSimilarQuestionPrompt: string;
+  quickSimilarFollowupPrompt: string;
   quickSimilarExtraInstructions: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
@@ -55,6 +57,10 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
     "- Keep output CRM-ready and actionable.",
   quickSimilarBasePrompt:
     "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
+  quickSimilarQuestionPrompt:
+    "Find up to 8 similar reseller customers based on this selected account. Use country/region scope first and fall back to country when needed. Prefer public company registers/directories and include confidence + source signals.",
+  quickSimilarFollowupPrompt:
+    "Deep-research this selected similar company for Vendora fit and commercial potential. Quantify likely Year-1 potential range, highlight top product families to pitch, and provide concrete next steps.",
   quickSimilarExtraInstructions:
     "Keep the response short. Focus on similar profile in segment, geography and category focus.",
   extraInstructions: "",
@@ -210,6 +216,8 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
     brandWebsites: uniqueTrimmed(value.brandWebsites, 60),
     researchBasePrompt: String(value.researchBasePrompt ?? "").trim(),
     quickSimilarBasePrompt: String(value.quickSimilarBasePrompt ?? "").trim(),
+    quickSimilarQuestionPrompt: String(value.quickSimilarQuestionPrompt ?? "").trim(),
+    quickSimilarFollowupPrompt: String(value.quickSimilarFollowupPrompt ?? "").trim(),
     quickSimilarExtraInstructions: String(value.quickSimilarExtraInstructions ?? "").trim(),
     extraInstructions: String(value.extraInstructions ?? "").trim(),
     defaultScope,
@@ -244,6 +252,12 @@ export async function getResearchConfig(): Promise<ResearchConfig> {
       ...DEFAULT_RESEARCH_CONFIG,
       ...normalized,
       vendorWebsites: normalized.vendorWebsites.length ? normalized.vendorWebsites : DEFAULT_RESEARCH_CONFIG.vendorWebsites,
+      researchBasePrompt: normalized.researchBasePrompt || DEFAULT_RESEARCH_CONFIG.researchBasePrompt,
+      quickSimilarBasePrompt: normalized.quickSimilarBasePrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarBasePrompt,
+      quickSimilarQuestionPrompt: normalized.quickSimilarQuestionPrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarQuestionPrompt,
+      quickSimilarFollowupPrompt: normalized.quickSimilarFollowupPrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarFollowupPrompt,
+      quickSimilarExtraInstructions:
+        normalized.quickSimilarExtraInstructions || DEFAULT_RESEARCH_CONFIG.quickSimilarExtraInstructions,
       industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
       countries: normalized.countries.length ? normalized.countries : DEFAULT_RESEARCH_CONFIG.countries,
       regionsByCountry: normalized.regionsByCountry.length ? normalized.regionsByCountry : DEFAULT_RESEARCH_CONFIG.regionsByCountry,
@@ -260,6 +274,12 @@ export async function saveResearchConfig(input: unknown): Promise<ResearchConfig
     ...DEFAULT_RESEARCH_CONFIG,
     ...normalized,
     vendorWebsites: normalized.vendorWebsites.length ? normalized.vendorWebsites : DEFAULT_RESEARCH_CONFIG.vendorWebsites,
+    researchBasePrompt: normalized.researchBasePrompt || DEFAULT_RESEARCH_CONFIG.researchBasePrompt,
+    quickSimilarBasePrompt: normalized.quickSimilarBasePrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarBasePrompt,
+    quickSimilarQuestionPrompt: normalized.quickSimilarQuestionPrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarQuestionPrompt,
+    quickSimilarFollowupPrompt: normalized.quickSimilarFollowupPrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarFollowupPrompt,
+    quickSimilarExtraInstructions:
+      normalized.quickSimilarExtraInstructions || DEFAULT_RESEARCH_CONFIG.quickSimilarExtraInstructions,
     industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
     countries: normalized.countries.length ? normalized.countries : DEFAULT_RESEARCH_CONFIG.countries,
     regionsByCountry: normalized.regionsByCountry.length ? normalized.regionsByCountry : DEFAULT_RESEARCH_CONFIG.regionsByCountry,

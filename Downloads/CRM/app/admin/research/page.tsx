@@ -69,6 +69,8 @@ type ResearchConfig = {
   brandWebsites: string[];
   researchBasePrompt: string;
   quickSimilarBasePrompt: string;
+  quickSimilarQuestionPrompt: string;
+  quickSimilarFollowupPrompt: string;
   quickSimilarExtraInstructions: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
@@ -107,6 +109,10 @@ const EMPTY_CONFIG: ResearchConfig = {
     "- Keep output CRM-ready and actionable.",
   quickSimilarBasePrompt:
     "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
+  quickSimilarQuestionPrompt:
+    "Find up to 8 similar reseller customers based on this selected account. Use country/region scope first and fall back to country when needed. Prefer public company registers/directories and include confidence + source signals.",
+  quickSimilarFollowupPrompt:
+    "Deep-research this selected similar company for Vendora fit and commercial potential. Quantify likely Year-1 potential range, highlight top product families to pitch, and provide concrete next steps.",
   quickSimilarExtraInstructions:
     "Keep the response short. Focus on similar profile in segment, geography and category focus.",
   extraInstructions: "",
@@ -428,6 +434,8 @@ function ResearchAdminContent() {
         .filter(Boolean),
       researchBasePrompt: String(form.get("researchBasePrompt") ?? "").trim(),
       quickSimilarBasePrompt: String(form.get("quickSimilarBasePrompt") ?? "").trim(),
+      quickSimilarQuestionPrompt: String(form.get("quickSimilarQuestionPrompt") ?? "").trim(),
+      quickSimilarFollowupPrompt: String(form.get("quickSimilarFollowupPrompt") ?? "").trim(),
       quickSimilarExtraInstructions: String(form.get("quickSimilarExtraInstructions") ?? "").trim(),
       extraInstructions: String(form.get("extraInstructions") ?? "").trim(),
       defaultScope: String(form.get("defaultScope") ?? "region") === "country" ? "country" : "region",
@@ -975,6 +983,30 @@ function ResearchAdminContent() {
                   name="quickSimilarBasePrompt"
                   defaultValue={config.quickSimilarBasePrompt}
                   placeholder={lang === "sv" ? "Grundprompt för snabb liknande-kunder AI" : "Base prompt for quick similar-customers AI"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="quickSimilarQuestionPrompt"
+                  defaultValue={config.quickSimilarQuestionPrompt}
+                  placeholder={
+                    lang === "sv"
+                      ? "Frågeprompt: Find similar customers (AI)"
+                      : "Question prompt: Find similar customers (AI)"
+                  }
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="quickSimilarFollowupPrompt"
+                  defaultValue={config.quickSimilarFollowupPrompt}
+                  placeholder={
+                    lang === "sv"
+                      ? "Fördjupningsprompt när du klickar en kund i resultatlistan"
+                      : "Follow-up prompt when clicking a customer in the result list"
+                  }
                 />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
