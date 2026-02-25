@@ -613,7 +613,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     setPlanSaving(true);
     setPlanStatus("");
 
-    const form = new FormData(event.currentTarget);
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
 
     try {
       const res = await fetch("/api/plans", {
@@ -636,7 +637,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         throw new Error(data.error ?? (lang === "sv" ? "Kunde inte skapa plan." : "Could not create plan."));
       }
 
-      event.currentTarget.reset();
+      formEl.reset();
       setPlanStatus(lang === "sv" ? "Plan sparad." : "Plan saved.");
       await loadCustomer();
       await loadActivities();
@@ -1066,7 +1067,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         <form onSubmit={createPlan} style={{ marginTop: "0.8rem" }}>
           <div className="crm-row">
             <input className="crm-input" name="title" placeholder={lang === "sv" ? "Titel" : "Title"} required />
-            <input className="crm-input" name="owner" placeholder={lang === "sv" ? "Ansvarig" : "Owner"} />
+            <select className="crm-select" name="owner" defaultValue={customer.seller ?? ""}>
+              <option value="">{lang === "sv" ? "Ansvarig (valfritt)" : "Owner (optional)"}</option>
+              {sellerOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
             <select className="crm-select" name="status" defaultValue="PLANNED">
               <option value="PLANNED">{lang === "sv" ? "Planerad" : "Planned"}</option>
               <option value="IN_PROGRESS">{lang === "sv" ? "Pågående" : "In progress"}</option>
