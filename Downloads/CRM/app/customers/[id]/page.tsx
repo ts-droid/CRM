@@ -78,6 +78,8 @@ type FormConfig = {
   countries: string[];
   regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
+  quickSimilarBasePrompt: string;
+  quickSimilarExtraInstructions: string;
 };
 
 type CustomerRegionRow = {
@@ -119,6 +121,11 @@ const DEFAULT_FORM_CONFIG: FormConfig = {
     { country: "LT", regions: ["Vilnius", "Kaunas", "Klaipeda", "Siauliai", "Panevezys", "Alytus", "Marijampole", "Utena", "Taurage", "Telsiai"] }
   ],
   sellers: ["Team Nordics"]
+  ,
+  quickSimilarBasePrompt:
+    "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
+  quickSimilarExtraInstructions:
+    "Keep the response short. Focus on similar profile in segment, geography and category focus."
 };
 
 function buildOptionList(...lists: Array<Array<string | null | undefined> | undefined>): string[] {
@@ -223,7 +230,15 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             regionsByCountry: Array.isArray(data.config.regionsByCountry)
               ? data.config.regionsByCountry
               : DEFAULT_FORM_CONFIG.regionsByCountry,
-            sellers: Array.isArray(data.config.sellers) ? data.config.sellers : DEFAULT_FORM_CONFIG.sellers
+            sellers: Array.isArray(data.config.sellers) ? data.config.sellers : DEFAULT_FORM_CONFIG.sellers,
+            quickSimilarBasePrompt:
+              typeof data.config.quickSimilarBasePrompt === "string" && data.config.quickSimilarBasePrompt.trim()
+                ? data.config.quickSimilarBasePrompt
+                : DEFAULT_FORM_CONFIG.quickSimilarBasePrompt,
+            quickSimilarExtraInstructions:
+              typeof data.config.quickSimilarExtraInstructions === "string"
+                ? data.config.quickSimilarExtraInstructions
+                : DEFAULT_FORM_CONFIG.quickSimilarExtraInstructions
           });
           if (Object.keys(settingsRegionMap).length > 0) {
             setRegionsByCountry((prev) => ({ ...settingsRegionMap, ...prev }));
@@ -363,10 +378,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         customerId: params.id,
         scope: nextScope,
         maxSimilar: 8,
-        basePrompt:
-          "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
-        extraInstructions:
-          "Keep the response short. Focus on similar profile in segment, geography and category focus."
+        basePrompt: formConfig.quickSimilarBasePrompt || DEFAULT_FORM_CONFIG.quickSimilarBasePrompt,
+        extraInstructions: formConfig.quickSimilarExtraInstructions || DEFAULT_FORM_CONFIG.quickSimilarExtraInstructions
       })
     });
     if (!res.ok) {

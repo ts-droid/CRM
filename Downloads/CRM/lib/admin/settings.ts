@@ -16,6 +16,8 @@ export type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
   researchBasePrompt: string;
+  quickSimilarBasePrompt: string;
+  quickSimilarExtraInstructions: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
   industries: string[];
@@ -51,6 +53,10 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
     "- Mark unknowns as Estimated + confidence.\n" +
     "- If key data is missing, stay conservative.\n" +
     "- Keep output CRM-ready and actionable.",
+  quickSimilarBasePrompt:
+    "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
+  quickSimilarExtraInstructions:
+    "Keep the response short. Focus on similar profile in segment, geography and category focus.",
   extraInstructions: "",
   defaultScope: "region",
   industries: [
@@ -203,6 +209,8 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
     vendorWebsites: uniqueTrimmed(value.vendorWebsites, 30),
     brandWebsites: uniqueTrimmed(value.brandWebsites, 60),
     researchBasePrompt: String(value.researchBasePrompt ?? "").trim(),
+    quickSimilarBasePrompt: String(value.quickSimilarBasePrompt ?? "").trim(),
+    quickSimilarExtraInstructions: String(value.quickSimilarExtraInstructions ?? "").trim(),
     extraInstructions: String(value.extraInstructions ?? "").trim(),
     defaultScope,
     industries: uniqueTrimmed(value.industries, 50),

@@ -67,6 +67,8 @@ type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
   researchBasePrompt: string;
+  quickSimilarBasePrompt: string;
+  quickSimilarExtraInstructions: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
   industries: string[];
@@ -102,6 +104,10 @@ const EMPTY_CONFIG: ResearchConfig = {
     "- Mark unknowns as Estimated + confidence.\n" +
     "- If key data is missing, stay conservative.\n" +
     "- Keep output CRM-ready and actionable.",
+  quickSimilarBasePrompt:
+    "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
+  quickSimilarExtraInstructions:
+    "Keep the response short. Focus on similar profile in segment, geography and category focus.",
   extraInstructions: "",
   defaultScope: "region",
   industries: [
@@ -419,6 +425,8 @@ function ResearchAdminContent() {
         .map((line) => line.trim())
         .filter(Boolean),
       researchBasePrompt: String(form.get("researchBasePrompt") ?? "").trim(),
+      quickSimilarBasePrompt: String(form.get("quickSimilarBasePrompt") ?? "").trim(),
+      quickSimilarExtraInstructions: String(form.get("quickSimilarExtraInstructions") ?? "").trim(),
       extraInstructions: String(form.get("extraInstructions") ?? "").trim(),
       defaultScope: String(form.get("defaultScope") ?? "region") === "country" ? "country" : "region",
       industries: String(form.get("industries") ?? "")
@@ -930,6 +938,22 @@ function ResearchAdminContent() {
                 name="researchBasePrompt"
                 defaultValue={config.researchBasePrompt}
                 placeholder={lang === "sv" ? "Global grundprompt för research" : "Global base prompt for research"}
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                name="quickSimilarBasePrompt"
+                defaultValue={config.quickSimilarBasePrompt}
+                placeholder={lang === "sv" ? "Grundprompt för snabb liknande-kunder AI" : "Base prompt for quick similar-customers AI"}
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                name="quickSimilarExtraInstructions"
+                defaultValue={config.quickSimilarExtraInstructions}
+                placeholder={lang === "sv" ? "Extra instruktioner för snabb liknande-kunder AI" : "Extra instructions for quick similar-customers AI"}
               />
             </div>
             <div className="crm-row" style={{ marginTop: "0.6rem" }}>
