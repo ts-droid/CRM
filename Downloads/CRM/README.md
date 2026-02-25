@@ -31,6 +31,10 @@ För Google Auth:
 - valfritt: `AUTH_ALLOWED_EMAILS` (kommaseparerad allowlist)
 - `AUTH_ADMIN_EMAILS` (kommaseparerad admin-lista, t.ex. `ts@vendora.se`)
 
+För Gemini (Research):
+- `GEMINI_API_KEY`
+- valfritt: `GEMINI_MODEL` (default: `gemini-2.5-flash`)
+
 För notifieringar:
 - `SMTP_HOST` (ex. `smtp.gmail.com`)
 - `SMTP_PORT` (ex. `587`)
