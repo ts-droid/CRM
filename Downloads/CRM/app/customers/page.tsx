@@ -37,8 +37,22 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
   const [sellerFilter, setSellerFilter] = useState("");
+  const [industryFilter, setIndustryFilter] = useState("");
+  const [potentialMin, setPotentialMin] = useState("");
+  const [potentialMax, setPotentialMax] = useState("");
+  const [viewName, setViewName] = useState("");
+  const [savedViews, setSavedViews] = useState<Array<{
+    name: string;
+    query: string;
+    country: string;
+    seller: string;
+    industry: string;
+    potentialMin: string;
+    potentialMax: string;
+  }>>([]);
   const [potentialScore, setPotentialScore] = useState(50);
   const [config, setConfig] = useState<FormConfig>(DEFAULT_CONFIG);
   const { t, lang } = useI18n();
@@ -70,8 +84,12 @@ export default function CustomersPage() {
     try {
       const params = new URLSearchParams();
       params.set("sort", "potential");
+      if (query) params.set("q", query);
       if (countryFilter) params.set("country", countryFilter);
       if (sellerFilter) params.set("seller", sellerFilter);
+      if (industryFilter) params.set("industry", industryFilter);
+      if (potentialMin) params.set("potentialMin", potentialMin);
+      if (potentialMax) params.set("potentialMax", potentialMax);
 
       const res = await fetch(`/api/customers?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) throw new Error(lang === "sv" ? "Kunde inte hämta kunder" : "Could not fetch customers");
@@ -86,11 +104,55 @@ export default function CustomersPage() {
 
   useEffect(() => {
     loadSettings();
+    try {
+      const raw = localStorage.getItem("crm-customer-views");
+      if (raw) setSavedViews(JSON.parse(raw));
+    } catch {
+      // ignore
+    }
   }, []);
 
   useEffect(() => {
     loadCustomers();
-  }, [lang, countryFilter, sellerFilter]);
+  }, [lang, query, countryFilter, sellerFilter, industryFilter, potentialMin, potentialMax]);
+
+  function persistViews(views: typeof savedViews) {
+    setSavedViews(views);
+    localStorage.setItem("crm-customer-views", JSON.stringify(views));
+  }
+
+  function saveCurrentView() {
+    if (!viewName.trim()) return;
+    const next = [
+      ...savedViews.filter((item) => item.name !== viewName.trim()),
+      {
+        name: viewName.trim(),
+        query,
+        country: countryFilter,
+        seller: sellerFilter,
+        industry: industryFilter,
+        potentialMin,
+        potentialMax
+      }
+    ];
+    persistViews(next);
+    setViewName("");
+  }
+
+  function applyView(name: string) {
+    const item = savedViews.find((view) => view.name === name);
+    if (!item) return;
+    setQuery(item.query);
+    setCountryFilter(item.country);
+    setSellerFilter(item.seller);
+    setIndustryFilter(item.industry);
+    setPotentialMin(item.potentialMin);
+    setPotentialMax(item.potentialMax);
+  }
+
+  function removeView(name: string) {
+    persistViews(savedViews.filter((item) => item.name !== name));
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -211,6 +273,12 @@ export default function CustomersPage() {
         <div className="crm-row" style={{ marginTop: "0.6rem" }}>
           <input
             className="crm-input"
+            placeholder={lang === "sv" ? "Sök kund eller bolag" : "Search customer or company"}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <input
+            className="crm-input"
             placeholder={lang === "sv" ? "Filtrera land" : "Filter country"}
             value={countryFilter}
             onChange={(event) => setCountryFilter(event.target.value)}
@@ -221,6 +289,57 @@ export default function CustomersPage() {
             value={sellerFilter}
             onChange={(event) => setSellerFilter(event.target.value)}
           />
+          <select className="crm-select" value={industryFilter} onChange={(event) => setIndustryFilter(event.target.value)}>
+            <option value="">{lang === "sv" ? "Alla branscher" : "All industries"}</option>
+            {config.industries.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+          <input
+            className="crm-input"
+            type="number"
+            min={0}
+            max={100}
+            placeholder={lang === "sv" ? "Potential min" : "Potential min"}
+            value={potentialMin}
+            onChange={(event) => setPotentialMin(event.target.value)}
+          />
+          <input
+            className="crm-input"
+            type="number"
+            min={0}
+            max={100}
+            placeholder={lang === "sv" ? "Potential max" : "Potential max"}
+            value={potentialMax}
+            onChange={(event) => setPotentialMax(event.target.value)}
+          />
+        </div>
+        <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+          <input
+            className="crm-input"
+            placeholder={lang === "sv" ? "Namn på sparad vy" : "Saved view name"}
+            value={viewName}
+            onChange={(event) => setViewName(event.target.value)}
+          />
+          <button className="crm-button crm-button-secondary" type="button" onClick={saveCurrentView}>
+            {lang === "sv" ? "Spara vy" : "Save view"}
+          </button>
+          {savedViews.length > 0 ? (
+            <select className="crm-select" defaultValue="" onChange={(event) => applyView(event.target.value)}>
+              <option value="" disabled>{lang === "sv" ? "Ladda sparad vy" : "Load saved view"}</option>
+              {savedViews.map((item) => (
+                <option key={item.name} value={item.name}>{item.name}</option>
+              ))}
+            </select>
+          ) : null}
+          {savedViews.length > 0 ? (
+            <select className="crm-select" defaultValue="" onChange={(event) => removeView(event.target.value)}>
+              <option value="" disabled>{lang === "sv" ? "Radera sparad vy" : "Delete saved view"}</option>
+              {savedViews.map((item) => (
+                <option key={item.name} value={item.name}>{item.name}</option>
+              ))}
+            </select>
+          ) : null}
         </div>
 
         {error ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.5rem" }}>{error}</p> : null}

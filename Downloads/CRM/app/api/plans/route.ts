@@ -1,8 +1,10 @@
-import { PlanStatus } from "@prisma/client";
+import { ActivityType, PlanPriority, PlanStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/activity";
 
 const VALID_STATUSES = new Set(Object.values(PlanStatus));
+const VALID_PRIORITIES = new Set(Object.values(PlanPriority));
 
 export async function GET() {
   const plans = await prisma.plan.findMany({
@@ -23,6 +25,7 @@ export async function POST(req: Request) {
       title?: string;
       description?: string;
       status?: PlanStatus;
+      priority?: PlanPriority;
       startDate?: string;
       endDate?: string;
       owner?: string;
@@ -36,16 +39,32 @@ export async function POST(req: Request) {
     if (body.status && !VALID_STATUSES.has(body.status)) {
       return NextResponse.json({ error: "Invalid plan status" }, { status: 400 });
     }
+    if (body.priority && !VALID_PRIORITIES.has(body.priority)) {
+      return NextResponse.json({ error: "Invalid plan priority" }, { status: 400 });
+    }
 
     const created = await prisma.plan.create({
       data: {
         title: body.title,
         description: body.description,
         status: body.status ?? PlanStatus.PLANNED,
+        priority: body.priority ?? PlanPriority.MEDIUM,
         startDate: body.startDate ? new Date(body.startDate) : undefined,
         endDate: body.endDate ? new Date(body.endDate) : undefined,
         owner: body.owner,
         customerId: body.customerId
+      }
+    });
+
+    await logActivity({
+      type: ActivityType.PLAN_CREATED,
+      message: `Plan created: ${created.title}`,
+      customerId: created.customerId,
+      planId: created.id,
+      metadata: {
+        status: created.status,
+        priority: created.priority,
+        owner: created.owner
       }
     });
 

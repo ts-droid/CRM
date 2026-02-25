@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { ActivityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/activity";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   let customer:
@@ -67,6 +69,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           typeof body.potentialScore === "number"
             ? Math.max(0, Math.min(100, Math.round(body.potentialScore)))
             : undefined
+      }
+    });
+
+    await logActivity({
+      type: ActivityType.CUSTOMER_UPDATED,
+      message: `Customer updated: ${updated.name}`,
+      customerId: updated.id,
+      metadata: {
+        potentialScore: updated.potentialScore,
+        seller: updated.seller,
+        country: updated.country
       }
     });
 

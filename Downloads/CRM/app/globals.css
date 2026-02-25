@@ -220,6 +220,21 @@ a {
   gap: 0.75rem;
 }
 
+.crm-kanban {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.crm-kanban-col {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.7rem;
+  background: #fcfcfc;
+  min-height: 220px;
+}
+
 .crm-item {
   border: 1px solid var(--line);
   background: #fff;
@@ -333,5 +348,9 @@ a {
   .crm-header-controls {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .crm-kanban {
+    grid-template-columns: 1fr;
   }
 }

@@ -14,6 +14,20 @@ enum PlanStatus {
   COMPLETED
 }
 
+enum PlanPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ActivityType {
+  NOTE
+  CUSTOMER_UPDATED
+  PLAN_CREATED
+  PLAN_UPDATED
+  CONTACT_CREATED
+}
+
 model Customer {
   id             String    @id @default(cuid())
   name           String
@@ -32,6 +46,7 @@ model Customer {
   updatedAt      DateTime  @updatedAt
   contacts       Contact[]
   plans          Plan[]
+  activities     Activity[]
 }
 
 model Contact {
@@ -46,6 +61,7 @@ model Contact {
   notes       String?
   customerId  String
   customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  activities  Activity[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -55,13 +71,30 @@ model Plan {
   title       String
   description String?
   status      PlanStatus @default(PLANNED)
+  priority    PlanPriority @default(MEDIUM)
   startDate   DateTime?
   endDate     DateTime?
   owner       String?
   customerId  String
   customer    Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  activities  Activity[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+}
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  message     String
+  metadata    Json?
+  customerId  String
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  planId      String?
+  plan        Plan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
+  contactId   String?
+  contact     Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  actorName   String?
+  createdAt   DateTime     @default(now())
 }
 
 model AppSetting {

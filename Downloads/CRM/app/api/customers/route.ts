@@ -1,15 +1,38 @@
 import { NextResponse } from "next/server";
+import { ActivityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const country = searchParams.get("country");
   const seller = searchParams.get("seller");
+  const industry = searchParams.get("industry");
+  const q = searchParams.get("q");
+  const potentialMin = Number(searchParams.get("potentialMin") ?? "");
+  const potentialMax = Number(searchParams.get("potentialMax") ?? "");
   const sort = searchParams.get("sort");
 
   const where = {
     ...(country ? { country } : {}),
-    ...(seller ? { seller } : {})
+    ...(seller ? { seller } : {}),
+    ...(industry ? { industry } : {}),
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q, mode: "insensitive" as const } },
+            { organization: { contains: q, mode: "insensitive" as const } }
+          ]
+        }
+      : {}),
+    ...(!Number.isNaN(potentialMin) || !Number.isNaN(potentialMax)
+      ? {
+          potentialScore: {
+            ...(Number.isNaN(potentialMin) ? {} : { gte: potentialMin }),
+            ...(Number.isNaN(potentialMax) ? {} : { lte: potentialMax })
+          }
+        }
+      : {})
   };
 
   const orderBy =
@@ -78,6 +101,13 @@ export async function POST(req: Request) {
         notes: body.notes,
         potentialScore: typeof body.potentialScore === "number" ? body.potentialScore : 50
       }
+    });
+
+    await logActivity({
+      type: ActivityType.CUSTOMER_UPDATED,
+      message: `Customer created: ${created.name}`,
+      customerId: created.id,
+      metadata: { created: true }
     });
 
     return NextResponse.json(created, { status: 201 });

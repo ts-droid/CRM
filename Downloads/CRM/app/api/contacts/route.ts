@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { ActivityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/activity";
 
 export async function GET() {
   try {
@@ -61,6 +63,17 @@ export async function POST(req: Request) {
         role: title,
         notes: body.notes,
         customerId: body.customerId
+      }
+    });
+
+    await logActivity({
+      type: ActivityType.CONTACT_CREATED,
+      message: `Contact added: ${created.firstName} ${created.lastName}`,
+      customerId: created.customerId,
+      contactId: created.id,
+      metadata: {
+        department: created.department,
+        title: created.title
       }
     });
 

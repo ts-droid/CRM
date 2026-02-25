@@ -10,6 +10,9 @@ type Plan = {
   title: string;
   description: string | null;
   status: "PLANNED" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETED";
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  startDate: string | null;
+  endDate: string | null;
   owner: string | null;
   customer: CustomerRef;
 };
@@ -34,10 +37,15 @@ export default function PlansPage() {
       PLANNED: t("statusPlanned"),
       IN_PROGRESS: t("statusInProgress"),
       ON_HOLD: t("statusOnHold"),
-      COMPLETED: t("statusCompleted")
+      COMPLETED: t("statusCompleted"),
+      LOW: lang === "sv" ? "Låg" : "Low",
+      MEDIUM: lang === "sv" ? "Medel" : "Medium",
+      HIGH: lang === "sv" ? "Hög" : "High"
     }),
-    [t]
+    [t, lang]
   );
+
+  const statusOrder: Array<Plan["status"]> = ["PLANNED", "IN_PROGRESS", "ON_HOLD", "COMPLETED"];
 
   async function load() {
     setLoading(true);
@@ -82,6 +90,9 @@ export default function PlansPage() {
           description: form.get("description"),
           owner: form.get("owner"),
           status: form.get("status"),
+          priority: form.get("priority"),
+          startDate: form.get("startDate"),
+          endDate: form.get("endDate"),
           customerId: form.get("customerId")
         })
       });
@@ -97,6 +108,28 @@ export default function PlansPage() {
       setError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function updatePlanStatus(planId: string, status: Plan["status"]) {
+    const response = await fetch(`/api/plans/${planId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status })
+    });
+
+    if (!response.ok) {
+      const data = (await response.json()) as { error?: string };
+      throw new Error(data.error ?? "Could not update plan");
+    }
+  }
+
+  async function onDropPlan(status: Plan["status"], planId: string) {
+    try {
+      await updatePlanStatus(planId, status);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : lang === "sv" ? "Kunde inte uppdatera plan" : "Could not update plan");
     }
   }
 
@@ -121,6 +154,11 @@ export default function PlansPage() {
               <option value="ON_HOLD">{labels.ON_HOLD}</option>
               <option value="COMPLETED">{labels.COMPLETED}</option>
             </select>
+            <select className="crm-select" name="priority" defaultValue="MEDIUM">
+              <option value="LOW">{labels.LOW}</option>
+              <option value="MEDIUM">{labels.MEDIUM}</option>
+              <option value="HIGH">{labels.HIGH}</option>
+            </select>
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
             <select className="crm-select" name="customerId" required defaultValue="">
@@ -135,12 +173,78 @@ export default function PlansPage() {
             </select>
           </div>
           <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+            <input className="crm-input" name="startDate" type="date" />
+            <input className="crm-input" name="endDate" type="date" />
+          </div>
+          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
             <textarea className="crm-textarea" name="description" placeholder={t("description")} />
           </div>
           <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={submitting}>
             {submitting ? t("saving") : t("savePlan")}
           </button>
         </form>
+      </section>
+
+      <section className="crm-card">
+        <h3>{lang === "sv" ? "Pipeline" : "Pipeline"}</h3>
+        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+          {lang === "sv" ? "Dra och släpp planer mellan statuskolumner." : "Drag and drop plans between status columns."}
+        </p>
+        {error ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.5rem" }}>{error}</p> : null}
+        {loading ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{t("loading")}</p> : null}
+        {!loading && plans.length === 0 ? <p className="crm-empty">{t("noPlans")}</p> : null}
+
+        <div className="crm-kanban" style={{ marginTop: "0.8rem" }}>
+          {statusOrder.map((status) => (
+            <section
+              key={status}
+              className="crm-kanban-col"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={async (event) => {
+                event.preventDefault();
+                const planId = event.dataTransfer.getData("text/plain");
+                if (!planId) return;
+                await onDropPlan(status, planId);
+              }}
+            >
+              <header className="crm-item-head">
+                <strong>{labels[status]}</strong>
+                <span className="crm-badge">{plans.filter((plan) => plan.status === status).length}</span>
+              </header>
+              <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                {plans
+                  .filter((plan) => plan.status === status)
+                  .map((plan) => (
+                    <article
+                      key={plan.id}
+                      className="crm-item"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("text/plain", plan.id);
+                        event.dataTransfer.effectAllowed = "move";
+                      }}
+                    >
+                      <div className="crm-item-head">
+                        <strong>{plan.title}</strong>
+                        <span className={`crm-badge ${statusClass[plan.status]}`}>{labels[plan.priority ?? "MEDIUM"]}</span>
+                      </div>
+                      <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                        {plan.customer.name}
+                        {plan.owner ? ` · ${plan.owner}` : ""}
+                      </p>
+                      <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                        {plan.endDate
+                          ? `${lang === "sv" ? "Deadline" : "Deadline"}: ${new Date(plan.endDate).toLocaleDateString()}`
+                          : lang === "sv"
+                          ? "Ingen deadline"
+                          : "No deadline"}
+                      </p>
+                    </article>
+                  ))}
+              </div>
+            </section>
+          ))}
+        </div>
       </section>
 
       <section className="crm-card">
@@ -158,6 +262,9 @@ export default function PlansPage() {
               <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
                 {plan.customer.name}
                 {plan.owner ? ` · ${plan.owner}` : ""}
+              </p>
+              <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                {lang === "sv" ? "Prioritet" : "Priority"}: {labels[plan.priority]}
               </p>
               {plan.description ? (
                 <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>

@@ -31,6 +31,8 @@ type Customer = {
     id: string;
     title: string;
     status: "PLANNED" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETED";
+    priority?: "LOW" | "MEDIUM" | "HIGH";
+    endDate?: string | null;
     owner: string | null;
   }>;
   webshopSignals?: {
@@ -38,6 +40,14 @@ type Customer = {
     description?: string;
     syncedAt?: string;
   } | null;
+};
+
+type Activity = {
+  id: string;
+  type: "NOTE" | "CUSTOMER_UPDATED" | "PLAN_CREATED" | "PLAN_UPDATED" | "CONTACT_CREATED";
+  message: string;
+  actorName: string | null;
+  createdAt: string;
 };
 
 type ContactDraft = {
@@ -65,6 +75,9 @@ function emptyContactDraft(): ContactDraft {
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const { lang } = useI18n();
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "contacts" | "plans" | "activity">("overview");
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [noteText, setNoteText] = useState("");
   const [status, setStatus] = useState<string>("");
   const [contactStatus, setContactStatus] = useState<string>("");
   const [contactsSaving, setContactsSaving] = useState(false);
@@ -86,8 +99,15 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     setLoading(false);
   }
 
+  async function loadActivities() {
+    const res = await fetch(`/api/customers/${params.id}/activities`, { cache: "no-store" });
+    if (!res.ok) return;
+    setActivities((await res.json()) as Activity[]);
+  }
+
   useEffect(() => {
     loadCustomer();
+    loadActivities();
   }, [params.id, lang]);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
@@ -194,11 +214,27 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       setContactStatus(lang === "sv" ? "Kontakter sparade." : "Contacts saved.");
       setNewContacts([emptyContactDraft()]);
       await loadCustomer();
+      await loadActivities();
     } catch (error) {
       setContactStatus(error instanceof Error ? error.message : lang === "sv" ? "Något gick fel." : "Something went wrong.");
     } finally {
       setContactsSaving(false);
     }
+  }
+
+  async function addActivityNote() {
+    if (!noteText.trim()) return;
+    const res = await fetch(`/api/customers/${params.id}/activities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: noteText.trim(), actorName: "CRM user" })
+    });
+    if (!res.ok) {
+      setStatus(lang === "sv" ? "Kunde inte spara notering." : "Could not save note.");
+      return;
+    }
+    setNoteText("");
+    await loadActivities();
   }
 
   if (loading) {
@@ -221,64 +257,86 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       </section>
 
       <section className="crm-card">
-        <h3>{lang === "sv" ? "Översikt" : "Overview"}</h3>
-        <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
-          {lang === "sv" ? "Land" : "Country"}: {customer.country ?? "-"} · {lang === "sv" ? "Region" : "Region"}: {customer.region ?? "-"} · {lang === "sv" ? "Säljare" : "Seller"}: {customer.seller ?? "-"}
-        </p>
-        <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
-          {lang === "sv" ? "Bransch" : "Industry"}: {customer.industry ?? "-"} · {lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}
-        </p>
-        <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
-          {lang === "sv" ? "Kontakter" : "Contacts"}: {customer.contacts.length} · {lang === "sv" ? "Planer" : "Plans"}: {customer.plans.length}
-        </p>
+        <div className="crm-row">
+          <button className={`crm-tab ${activeTab === "overview" ? "active" : ""}`} onClick={() => setActiveTab("overview")} type="button">
+            {lang === "sv" ? "Översikt" : "Overview"}
+          </button>
+          <button className={`crm-tab ${activeTab === "contacts" ? "active" : ""}`} onClick={() => setActiveTab("contacts")} type="button">
+            {lang === "sv" ? "Kontakter" : "Contacts"}
+          </button>
+          <button className={`crm-tab ${activeTab === "plans" ? "active" : ""}`} onClick={() => setActiveTab("plans")} type="button">
+            {lang === "sv" ? "Planer" : "Plans"}
+          </button>
+          <button className={`crm-tab ${activeTab === "activity" ? "active" : ""}`} onClick={() => setActiveTab("activity")} type="button">
+            {lang === "sv" ? "Historik" : "Activity"}
+          </button>
+        </div>
       </section>
 
-      <section className="crm-card">
-        <h3>{lang === "sv" ? "Kundinformation" : "Customer information"}</h3>
-        <form onSubmit={onSave} style={{ marginTop: "0.8rem" }}>
-          <div className="crm-row">
-            <input className="crm-input" name="name" defaultValue={customer.name} placeholder={lang === "sv" ? "Namn" : "Name"} />
-            <input className="crm-input" name="organization" defaultValue={customer.organization ?? ""} placeholder={lang === "sv" ? "Organisation" : "Organization"} />
-            <input className="crm-input" name="industry" defaultValue={customer.industry ?? ""} placeholder={lang === "sv" ? "Bransch" : "Industry"} />
-          </div>
-          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <input className="crm-input" name="country" defaultValue={customer.country ?? ""} placeholder={lang === "sv" ? "Land" : "Country"} />
-            <input className="crm-input" name="region" defaultValue={customer.region ?? ""} placeholder={lang === "sv" ? "Region" : "Region"} />
-            <input className="crm-input" name="seller" defaultValue={customer.seller ?? ""} placeholder={lang === "sv" ? "Säljare" : "Seller"} />
-          </div>
-          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <input className="crm-input" name="website" defaultValue={customer.website ?? ""} placeholder={lang === "sv" ? "Webbsida" : "Website"} />
-          </div>
-          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <input
-              className="crm-input"
-              name="potentialScore"
-              type="number"
-              min={0}
-              max={100}
-              defaultValue={customer.potentialScore}
-              placeholder={lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}
-            />
-          </div>
-          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <textarea className="crm-textarea" name="notes" defaultValue={customer.notes ?? ""} placeholder={lang === "sv" ? "Noteringar" : "Notes"} />
-          </div>
-          <div className="crm-row" style={{ marginTop: "0.7rem" }}>
-            <button className="crm-button" type="submit">{lang === "sv" ? "Spara" : "Save"}</button>
-            <button className="crm-button crm-button-secondary" type="button" onClick={runSimilarSearch}>
-              {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
-            </button>
-            <Link
-              href={`/admin/research?tab=research&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}`}
-              className="crm-button crm-button-secondary"
-            >
-              {lang === "sv" ? "Öppna research för kund" : "Open research for customer"}
-            </Link>
-          </div>
-          {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
-        </form>
-      </section>
+      {activeTab === "overview" ? (
+        <>
+          <section className="crm-card">
+            <h3>{lang === "sv" ? "Översikt" : "Overview"}</h3>
+            <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
+              {lang === "sv" ? "Land" : "Country"}: {customer.country ?? "-"} · {lang === "sv" ? "Region" : "Region"}: {customer.region ?? "-"} · {lang === "sv" ? "Säljare" : "Seller"}: {customer.seller ?? "-"}
+            </p>
+            <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+              {lang === "sv" ? "Bransch" : "Industry"}: {customer.industry ?? "-"} · {lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}
+            </p>
+            <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+              {lang === "sv" ? "Kontakter" : "Contacts"}: {customer.contacts.length} · {lang === "sv" ? "Planer" : "Plans"}: {customer.plans.length}
+            </p>
+          </section>
 
+          <section className="crm-card">
+            <h3>{lang === "sv" ? "Kundinformation" : "Customer information"}</h3>
+            <form onSubmit={onSave} style={{ marginTop: "0.8rem" }}>
+              <div className="crm-row">
+                <input className="crm-input" name="name" defaultValue={customer.name} placeholder={lang === "sv" ? "Namn" : "Name"} />
+                <input className="crm-input" name="organization" defaultValue={customer.organization ?? ""} placeholder={lang === "sv" ? "Organisation" : "Organization"} />
+                <input className="crm-input" name="industry" defaultValue={customer.industry ?? ""} placeholder={lang === "sv" ? "Bransch" : "Industry"} />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input className="crm-input" name="country" defaultValue={customer.country ?? ""} placeholder={lang === "sv" ? "Land" : "Country"} />
+                <input className="crm-input" name="region" defaultValue={customer.region ?? ""} placeholder={lang === "sv" ? "Region" : "Region"} />
+                <input className="crm-input" name="seller" defaultValue={customer.seller ?? ""} placeholder={lang === "sv" ? "Säljare" : "Seller"} />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input className="crm-input" name="website" defaultValue={customer.website ?? ""} placeholder={lang === "sv" ? "Webbsida" : "Website"} />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  name="potentialScore"
+                  type="number"
+                  min={0}
+                  max={100}
+                  defaultValue={customer.potentialScore}
+                  placeholder={lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea className="crm-textarea" name="notes" defaultValue={customer.notes ?? ""} placeholder={lang === "sv" ? "Noteringar" : "Notes"} />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.7rem" }}>
+                <button className="crm-button" type="submit">{lang === "sv" ? "Spara" : "Save"}</button>
+                <button className="crm-button crm-button-secondary" type="button" onClick={runSimilarSearch}>
+                  {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
+                </button>
+                <Link
+                  href={`/admin/research?tab=research&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}`}
+                  className="crm-button crm-button-secondary"
+                >
+                  {lang === "sv" ? "Öppna research för kund" : "Open research for customer"}
+                </Link>
+              </div>
+              {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
+            </form>
+          </section>
+        </>
+      ) : null}
+
+      {activeTab === "contacts" ? (
       <section className="crm-card">
         <div className="crm-item-head">
           <h3>{lang === "sv" ? "Kontakter" : "Contacts"}</h3>
@@ -372,7 +430,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         </div>
         {contactStatus ? <p className="crm-subtle" style={{ marginTop: "0.55rem" }}>{contactStatus}</p> : null}
       </section>
+      ) : null}
 
+      {activeTab === "plans" ? (
       <section className="crm-card">
         <h3>{lang === "sv" ? "Planer" : "Plans"}</h3>
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
@@ -388,11 +448,51 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
                   {lang === "sv" ? "Ansvarig" : "Owner"}: {plan.owner ?? "-"}
                 </p>
+                <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                  {lang === "sv" ? "Prioritet" : "Priority"}: {plan.priority ?? "-"}
+                  {plan.endDate ? ` · ${lang === "sv" ? "Deadline" : "Deadline"}: ${new Date(plan.endDate).toLocaleDateString()}` : ""}
+                </p>
               </article>
             ))
           )}
         </div>
       </section>
+      ) : null}
+
+      {activeTab === "activity" ? (
+      <section className="crm-card">
+        <h3>{lang === "sv" ? "Aktivitetshistorik" : "Activity history"}</h3>
+        <div className="crm-row" style={{ marginTop: "0.7rem" }}>
+          <textarea
+            className="crm-textarea"
+            value={noteText}
+            onChange={(event) => setNoteText(event.target.value)}
+            placeholder={lang === "sv" ? "Lägg till notering..." : "Add note..."}
+          />
+        </div>
+        <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+          <button className="crm-button" type="button" onClick={addActivityNote}>
+            {lang === "sv" ? "Spara notering" : "Save note"}
+          </button>
+        </div>
+        <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+          {activities.length === 0 ? (
+            <p className="crm-empty">{lang === "sv" ? "Ingen aktivitet ännu." : "No activity yet."}</p>
+          ) : (
+            activities.map((item) => (
+              <article key={item.id} className="crm-item">
+                <div className="crm-item-head">
+                  <strong>{item.type}</strong>
+                  <span className="crm-badge">{new Date(item.createdAt).toLocaleString()}</span>
+                </div>
+                <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>{item.message}</p>
+                {item.actorName ? <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>{item.actorName}</p> : null}
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+      ) : null}
 
       {customer.webshopSignals ? (
         <section className="crm-card">
