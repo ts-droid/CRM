@@ -128,6 +128,13 @@ const DEFAULT_FORM_CONFIG: FormConfig = {
     "Keep the response short. Focus on similar profile in segment, geography and category focus."
 };
 
+const planStatusClass: Record<Customer["plans"][number]["status"], string> = {
+  PLANNED: "",
+  IN_PROGRESS: "in_progress",
+  ON_HOLD: "on_hold",
+  COMPLETED: "completed"
+};
+
 function buildOptionList(...lists: Array<Array<string | null | undefined> | undefined>): string[] {
   const seen = new Set<string>();
   for (const list of lists) {
@@ -495,10 +502,34 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       event.currentTarget.reset();
       setPlanStatus(lang === "sv" ? "Plan sparad." : "Plan saved.");
       await loadCustomer();
+      await loadActivities();
     } catch (error) {
       setPlanStatus(error instanceof Error ? error.message : (lang === "sv" ? "Kunde inte skapa plan." : "Could not create plan."));
     } finally {
       setPlanSaving(false);
+    }
+  }
+
+  async function updatePlanStatus(planId: string, status: Customer["plans"][number]["status"]) {
+    const res = await fetch(`/api/plans/${planId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status })
+    });
+    if (!res.ok) {
+      const data = (await res.json()) as { error?: string };
+      throw new Error(data.error ?? (lang === "sv" ? "Kunde inte uppdatera plan." : "Could not update plan."));
+    }
+  }
+
+  async function onDropPlan(status: Customer["plans"][number]["status"], planId: string) {
+    try {
+      await updatePlanStatus(planId, status);
+      await loadCustomer();
+      await loadActivities();
+      setPlanStatus(lang === "sv" ? "Plan uppdaterad." : "Plan updated.");
+    } catch (error) {
+      setPlanStatus(error instanceof Error ? error.message : (lang === "sv" ? "Kunde inte uppdatera plan." : "Could not update plan."));
     }
   }
 
@@ -515,7 +546,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       body: JSON.stringify({ message: noteText.trim(), actorName: currentUserEmail || "CRM user" })
     });
     if (!res.ok) {
-      setActivityStatus(lang === "sv" ? "Kunde inte spara notering." : "Could not save note.");
+      let apiError = "";
+      try {
+        const data = (await res.json()) as { error?: string };
+        apiError = data.error || "";
+      } catch {
+        apiError = "";
+      }
+      setActivityStatus(apiError || (lang === "sv" ? "Kunde inte spara notering." : "Could not save note."));
       setActivitySaving(false);
       return;
     }
@@ -858,6 +896,68 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           </button>
           {planStatus ? <p className="crm-subtle" style={{ marginTop: "0.55rem" }}>{planStatus}</p> : null}
         </form>
+        <h3 style={{ marginTop: "1rem" }}>{lang === "sv" ? "Pipeline" : "Pipeline"}</h3>
+        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+          {lang === "sv" ? "Dra och släpp planer mellan statuskolumner." : "Drag and drop plans between status columns."}
+        </p>
+        <div className="crm-kanban" style={{ marginTop: "0.8rem" }}>
+          {(["PLANNED", "IN_PROGRESS", "ON_HOLD", "COMPLETED"] as const).map((status) => (
+            <section
+              key={status}
+              className="crm-kanban-col"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={async (event) => {
+                event.preventDefault();
+                const planId = event.dataTransfer.getData("text/plain");
+                if (!planId) return;
+                await onDropPlan(status, planId);
+              }}
+            >
+              <header className="crm-item-head">
+                <strong>
+                  {status === "PLANNED"
+                    ? (lang === "sv" ? "Planerad" : "Planned")
+                    : status === "IN_PROGRESS"
+                    ? (lang === "sv" ? "Pågående" : "In progress")
+                    : status === "ON_HOLD"
+                    ? (lang === "sv" ? "Pausad" : "On hold")
+                    : (lang === "sv" ? "Avslutad" : "Completed")}
+                </strong>
+                <span className="crm-badge">{customer.plans.filter((plan) => plan.status === status).length}</span>
+              </header>
+              <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                {customer.plans
+                  .filter((plan) => plan.status === status)
+                  .map((plan) => (
+                    <article
+                      key={plan.id}
+                      className="crm-item"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("text/plain", plan.id);
+                        event.dataTransfer.effectAllowed = "move";
+                      }}
+                    >
+                      <div className="crm-item-head">
+                        <strong>{plan.title}</strong>
+                        <span className={`crm-badge ${planStatusClass[plan.status]}`}>{plan.priority ?? "MEDIUM"}</span>
+                      </div>
+                      <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                        {lang === "sv" ? "Ansvarig" : "Owner"}: {plan.owner ?? "-"}
+                      </p>
+                      <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                        {plan.endDate
+                          ? `${lang === "sv" ? "Deadline" : "Deadline"}: ${new Date(plan.endDate).toLocaleDateString()}`
+                          : lang === "sv"
+                          ? "Ingen deadline"
+                          : "No deadline"}
+                      </p>
+                    </article>
+                  ))}
+              </div>
+            </section>
+          ))}
+        </div>
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {customer.plans.length === 0 ? (
             <p className="crm-empty">{lang === "sv" ? "Inga planer registrerade." : "No plans registered."}</p>
@@ -866,7 +966,15 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               <article key={plan.id} className="crm-item">
                 <div className="crm-item-head">
                   <strong>{plan.title}</strong>
-                  <span className="crm-badge">{plan.status}</span>
+                  <span className={`crm-badge ${planStatusClass[plan.status]}`}>
+                    {plan.status === "PLANNED"
+                      ? (lang === "sv" ? "Planerad" : "Planned")
+                      : plan.status === "IN_PROGRESS"
+                      ? (lang === "sv" ? "Pågående" : "In progress")
+                      : plan.status === "ON_HOLD"
+                      ? (lang === "sv" ? "Pausad" : "On hold")
+                      : (lang === "sv" ? "Avslutad" : "Completed")}
+                  </span>
                 </div>
                 <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
                   {lang === "sv" ? "Ansvarig" : "Owner"}: {plan.owner ?? "-"}

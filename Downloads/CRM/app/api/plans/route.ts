@@ -5,18 +5,31 @@ import { logActivity } from "@/lib/activity";
 
 const VALID_STATUSES = new Set(Object.values(PlanStatus));
 const VALID_PRIORITIES = new Set(Object.values(PlanPriority));
+function isMissingTableError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2021";
+}
 
 export async function GET() {
-  const plans = await prisma.plan.findMany({
-    include: {
-      customer: true
-    },
-    orderBy: {
-      createdAt: "desc"
-    }
-  });
+  try {
+    const plans = await prisma.plan.findMany({
+      include: {
+        customer: true
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
 
-  return NextResponse.json(plans);
+    return NextResponse.json(plans);
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return NextResponse.json(
+        { error: "Plan table is missing in database. Run prisma db push to sync schema." },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json({ error: "Could not load plans" }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
@@ -69,7 +82,13 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json(created, { status: 201 });
-  } catch {
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return NextResponse.json(
+        { error: "Plan table is missing in database. Run prisma db push to sync schema." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 }

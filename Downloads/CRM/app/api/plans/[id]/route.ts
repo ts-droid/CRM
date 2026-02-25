@@ -5,6 +5,9 @@ import { logActivity } from "@/lib/activity";
 
 const VALID_STATUSES = new Set(Object.values(PlanStatus));
 const VALID_PRIORITIES = new Set(Object.values(PlanPriority));
+function isMissingTableError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2021";
+}
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   try {
@@ -51,7 +54,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     });
 
     return NextResponse.json(updated);
-  } catch {
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return NextResponse.json(
+        { error: "Plan table is missing in database. Run prisma db push to sync schema." },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 }
