@@ -970,6 +970,9 @@ function ResearchAdminContent() {
 
             <section style={{ display: settingsTab === "prompts" ? "block" : "none" }}>
               <div className="crm-row">
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Full research-prompt (global)" : "Full research prompt (global)"}
+                </p>
                 <textarea
                   className="crm-textarea"
                   name="researchBasePrompt"
@@ -978,6 +981,9 @@ function ResearchAdminContent() {
                 />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Liknande-kunder prompt (legacy)" : "Similar-customers prompt (legacy)"}
+                </p>
                 <textarea
                   className="crm-textarea"
                   name="quickSimilarBasePrompt"
@@ -986,6 +992,9 @@ function ResearchAdminContent() {
                 />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Find similar customers: fråga" : "Find similar customers: question prompt"}
+                </p>
                 <textarea
                   className="crm-textarea"
                   name="quickSimilarQuestionPrompt"
@@ -998,6 +1007,9 @@ function ResearchAdminContent() {
                 />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Find similar customers: fördjupning vid klick" : "Find similar customers: follow-up on click"}
+                </p>
                 <textarea
                   className="crm-textarea"
                   name="quickSimilarFollowupPrompt"
@@ -1010,6 +1022,9 @@ function ResearchAdminContent() {
                 />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Extra instruktioner: snabb liknande-kundersökning" : "Extra instructions: quick similar search"}
+                </p>
                 <textarea
                   className="crm-textarea"
                   name="quickSimilarExtraInstructions"
@@ -1018,6 +1033,9 @@ function ResearchAdminContent() {
                 />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Extra AI-instruktioner (globalt)" : "Extra AI instructions (global)"}
+                </p>
                 <textarea
                   className="crm-textarea"
                   name="extraInstructions"
