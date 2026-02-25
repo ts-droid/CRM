@@ -72,6 +72,7 @@ type ResearchConfig = {
   countries: string[];
   regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
+  sellerAssignments: Array<{ seller: string; emails: string[] }>;
   requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
   remindersEnabled: boolean;
   reminderDaysBeforeDeadline: number;
@@ -122,6 +123,7 @@ const EMPTY_CONFIG: ResearchConfig = {
     { country: "LT", regions: ["Vilnius", "Kaunas", "Klaipeda", "Siauliai", "Panevezys", "Alytus", "Marijampole", "Utena", "Taurage", "Telsiai"] }
   ],
   sellers: ["Team Nordics"],
+  sellerAssignments: [],
   requiredCustomerFields: ["name", "industry", "country", "seller"],
   remindersEnabled: true,
   reminderDaysBeforeDeadline: 7,
@@ -133,6 +135,41 @@ const EMPTY_CONFIG: ResearchConfig = {
   gmailFrom: "",
   gmailReplyTo: ""
 };
+
+function formatSellerAssignments(value: ResearchConfig["sellerAssignments"]): string {
+  return value
+    .map((entry) => {
+      const seller = String(entry.seller || "").trim();
+      const emails = (entry.emails || []).map((email) => String(email || "").trim().toLowerCase()).filter(Boolean);
+      if (!seller || emails.length === 0) return "";
+      return `${seller}: ${emails.join(", ")}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseSellerAssignments(text: string): ResearchConfig["sellerAssignments"] {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const result: ResearchConfig["sellerAssignments"] = [];
+
+  for (const line of lines) {
+    const separatorIndex = line.indexOf(":");
+    if (separatorIndex <= 0) continue;
+    const seller = line.slice(0, separatorIndex).trim();
+    if (!seller || seen.has(seller)) continue;
+    const emails = line
+      .slice(separatorIndex + 1)
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    if (emails.length === 0) continue;
+    result.push({ seller, emails });
+    seen.add(seller);
+  }
+
+  return result;
+}
 
 function formatRegionsByCountry(value: ResearchConfig["regionsByCountry"]): string {
   return value
@@ -188,6 +225,11 @@ function ResearchAdminContent() {
   const [config, setConfig] = useState<ResearchConfig>(EMPTY_CONFIG);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsStatus, setSettingsStatus] = useState<string>("");
+  const [sellerDraft, setSellerDraft] = useState("");
+  const [reassignFromSeller, setReassignFromSeller] = useState("");
+  const [reassignToSeller, setReassignToSeller] = useState("");
+  const [reassignLoading, setReassignLoading] = useState(false);
+  const [reassignStatus, setReassignStatus] = useState("");
   const [remindersRunning, setRemindersRunning] = useState(false);
   const [remindersStatus, setRemindersStatus] = useState("");
 
@@ -347,6 +389,7 @@ function ResearchAdminContent() {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
+      sellerAssignments: parseSellerAssignments(String(form.get("sellerAssignments") ?? "")),
       requiredCustomerFields: (form.getAll("requiredCustomerFields") as string[]).filter(Boolean) as Array<
         "name" | "industry" | "country" | "seller"
       >,
@@ -380,6 +423,58 @@ function ResearchAdminContent() {
       setSettingsStatus(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSettingsLoading(false);
+    }
+  }
+
+  function addSellerDraft() {
+    const nextSeller = sellerDraft.trim();
+    if (!nextSeller) return;
+    if (config.sellers.includes(nextSeller)) {
+      setSettingsStatus(lang === "sv" ? "Säljare finns redan." : "Seller already exists.");
+      return;
+    }
+    setConfig((prev) => ({ ...prev, sellers: [...prev.sellers, nextSeller] }));
+    setSellerDraft("");
+    setSettingsStatus("");
+  }
+
+  function removeSeller(name: string) {
+    if (!name) return;
+    setConfig((prev) => ({
+      ...prev,
+      sellers: prev.sellers.filter((seller) => seller !== name),
+      sellerAssignments: prev.sellerAssignments.filter((assignment) => assignment.seller !== name)
+    }));
+    if (reassignFromSeller === name) setReassignFromSeller("");
+    if (reassignToSeller === name) setReassignToSeller("");
+    setSettingsStatus("");
+  }
+
+  async function runSellerReassign() {
+    if (!reassignFromSeller || !reassignToSeller || reassignFromSeller === reassignToSeller) {
+      setReassignStatus(lang === "sv" ? "Välj två olika säljare." : "Select two different sellers.");
+      return;
+    }
+
+    setReassignLoading(true);
+    setReassignStatus("");
+    try {
+      const res = await fetch("/api/admin/sellers/reassign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromSeller: reassignFromSeller, toSeller: reassignToSeller })
+      });
+      const data = (await res.json()) as { moved?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to reassign customers");
+      setReassignStatus(
+        lang === "sv"
+          ? `Kundbytet klart. Flyttade ${data.moved ?? 0} kunder.`
+          : `Reassignment done. Moved ${data.moved ?? 0} customers.`
+      );
+    } catch (error) {
+      setReassignStatus(error instanceof Error ? error.message : "Failed to reassign customers");
+    } finally {
+      setReassignLoading(false);
     }
   }
 
@@ -678,6 +773,53 @@ function ResearchAdminContent() {
                 placeholder={lang === "sv" ? "Säljare, en per rad" : "Sellers, one per line"}
               />
             </div>
+            <div className="crm-row" style={{ marginTop: "0.55rem" }}>
+              <input
+                className="crm-input"
+                value={sellerDraft}
+                onChange={(event) => setSellerDraft(event.target.value)}
+                placeholder={lang === "sv" ? "Ny säljare (namn)" : "New seller (name)"}
+              />
+              <button className="crm-button crm-button-secondary" type="button" onClick={addSellerDraft}>
+                {lang === "sv" ? "Lägg till säljare" : "Add seller"}
+              </button>
+              <select className="crm-select" defaultValue="" onChange={(event) => removeSeller(event.target.value)}>
+                <option value="" disabled>{lang === "sv" ? "Ta bort säljare" : "Remove seller"}</option>
+                {config.sellers.map((seller) => (
+                  <option key={seller} value={seller}>{seller}</option>
+                ))}
+              </select>
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                name="sellerAssignments"
+                defaultValue={formatSellerAssignments(config.sellerAssignments)}
+                placeholder={
+                  lang === "sv"
+                    ? "Säljare till e-post, format: Team Nordics: ts@vendora.se, anna@vendora.se"
+                    : "Seller to email mapping, format: Team Nordics: ts@vendora.se, anna@vendora.se"
+                }
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.55rem" }}>
+              <select className="crm-select" value={reassignFromSeller} onChange={(event) => setReassignFromSeller(event.target.value)}>
+                <option value="">{lang === "sv" ? "Flytta från säljare" : "Move from seller"}</option>
+                {config.sellers.map((seller) => (
+                  <option key={`from-${seller}`} value={seller}>{seller}</option>
+                ))}
+              </select>
+              <select className="crm-select" value={reassignToSeller} onChange={(event) => setReassignToSeller(event.target.value)}>
+                <option value="">{lang === "sv" ? "Flytta till säljare" : "Move to seller"}</option>
+                {config.sellers.map((seller) => (
+                  <option key={`to-${seller}`} value={seller}>{seller}</option>
+                ))}
+              </select>
+              <button className="crm-button crm-button-secondary" type="button" disabled={reassignLoading} onClick={runSellerReassign}>
+                {reassignLoading ? (lang === "sv" ? "Flyttar..." : "Moving...") : (lang === "sv" ? "Byt säljare på kunder" : "Reassign customers")}
+              </button>
+            </div>
+            {reassignStatus ? <p className="crm-subtle" style={{ marginTop: "0.4rem" }}>{reassignStatus}</p> : null}
             <div style={{ marginTop: "0.6rem" }}>
               <p className="crm-subtle">{lang === "sv" ? "Obligatoriska kundfält" : "Required customer fields"}</p>
               <div className="crm-row" style={{ marginTop: "0.4rem" }}>

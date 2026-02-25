@@ -27,6 +27,7 @@ export default function HomePage() {
   const [rows, setRows] = useState<Customer[]>([]);
   const [country, setCountry] = useState("");
   const [seller, setSeller] = useState("");
+  const [defaultSellerApplied, setDefaultSellerApplied] = useState(false);
   const [sort, setSort] = useState("potential");
   const { t, lang } = useI18n();
 
@@ -55,6 +56,25 @@ export default function HomePage() {
   useEffect(() => {
     loadStats();
   }, []);
+
+  useEffect(() => {
+    if (defaultSellerApplied) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/profile/default-seller", { cache: "no-store" });
+        if (!res.ok) {
+          setDefaultSellerApplied(true);
+          return;
+        }
+        const data = (await res.json()) as { defaultSeller?: string | null };
+        if (data.defaultSeller && !seller) {
+          setSeller(data.defaultSeller);
+        }
+      } finally {
+        setDefaultSellerApplied(true);
+      }
+    })();
+  }, [defaultSellerApplied, seller]);
 
   useEffect(() => {
     loadCustomers();

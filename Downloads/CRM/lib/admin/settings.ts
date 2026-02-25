@@ -7,6 +7,11 @@ export type RegionsByCountry = Array<{
   regions: string[];
 }>;
 
+export type SellerAssignments = Array<{
+  seller: string;
+  emails: string[];
+}>;
+
 export type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
@@ -16,6 +21,7 @@ export type ResearchConfig = {
   countries: string[];
   regionsByCountry: RegionsByCountry;
   sellers: string[];
+  sellerAssignments: SellerAssignments;
   requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
   remindersEnabled: boolean;
   reminderDaysBeforeDeadline: number;
@@ -66,6 +72,7 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
     { country: "LT", regions: ["Vilnius", "Kaunas", "Klaipeda", "Siauliai", "Panevezys", "Alytus", "Marijampole", "Utena", "Taurage", "Telsiai"] }
   ],
   sellers: ["Team Nordics"],
+  sellerAssignments: [],
   requiredCustomerFields: ["name", "industry", "country", "seller"],
   remindersEnabled: true,
   reminderDaysBeforeDeadline: 7,
@@ -101,6 +108,25 @@ function normalizeRegionsByCountry(input: unknown): RegionsByCountry {
   }
 
   return result.length ? result : DEFAULT_RESEARCH_CONFIG.regionsByCountry;
+}
+
+function normalizeSellerAssignments(input: unknown): SellerAssignments {
+  if (!Array.isArray(input)) return [];
+  const seenSeller = new Set<string>();
+  const assignments: SellerAssignments = [];
+
+  for (const row of input) {
+    if (!row || typeof row !== "object") continue;
+    const value = row as Record<string, unknown>;
+    const seller = String(value.seller ?? "").trim();
+    if (!seller || seenSeller.has(seller)) continue;
+    const emails = uniqueTrimmed(value.emails, 40).map((email) => email.toLowerCase());
+    if (emails.length === 0) continue;
+    assignments.push({ seller, emails });
+    seenSeller.add(seller);
+  }
+
+  return assignments;
 }
 
 function normalizeRequiredFields(input: unknown): Array<"name" | "industry" | "country" | "seller"> {
@@ -147,10 +173,17 @@ function mergeRegionsByCountryWithDefaults(regionsByCountry: RegionsByCountry): 
   return Array.from(merged.entries()).map(([country, regions]) => ({ country, regions }));
 }
 
+function mergeSellersWithAssignments(sellers: string[], assignments: SellerAssignments): string[] {
+  return uniqueTrimmed([...sellers, ...assignments.map((assignment) => assignment.seller)], 80);
+}
+
 export function normalizeResearchConfig(input: unknown): ResearchConfig {
   const value = typeof input === "object" && input ? (input as Record<string, unknown>) : {};
 
   const defaultScope = value.defaultScope === "country" ? "country" : "region";
+
+  const sellerAssignments = normalizeSellerAssignments(value.sellerAssignments);
+  const sellers = mergeSellersWithAssignments(uniqueTrimmed(value.sellers, 80), sellerAssignments);
 
   return {
     vendorWebsites: uniqueTrimmed(value.vendorWebsites, 30),
@@ -160,7 +193,8 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
     industries: uniqueTrimmed(value.industries, 50),
     countries: mergeCountriesWithDefaults(uniqueTrimmed(value.countries, 50)),
     regionsByCountry: mergeRegionsByCountryWithDefaults(normalizeRegionsByCountry(value.regionsByCountry)),
-    sellers: uniqueTrimmed(value.sellers, 50),
+    sellers,
+    sellerAssignments,
     requiredCustomerFields: normalizeRequiredFields(value.requiredCustomerFields),
     remindersEnabled: value.remindersEnabled !== false,
     reminderDaysBeforeDeadline: normalizePositiveInt(value.reminderDaysBeforeDeadline, 7, 1, 60),

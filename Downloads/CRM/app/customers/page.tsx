@@ -61,6 +61,7 @@ export default function CustomersPage() {
   const [query, setQuery] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
   const [sellerFilter, setSellerFilter] = useState("");
+  const [defaultSellerApplied, setDefaultSellerApplied] = useState(false);
   const [industryFilter, setIndustryFilter] = useState("");
   const [potentialMin, setPotentialMin] = useState("");
   const [potentialMax, setPotentialMax] = useState("");
@@ -132,6 +133,25 @@ export default function CustomersPage() {
       // ignore
     }
   }, []);
+
+  useEffect(() => {
+    if (defaultSellerApplied) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/profile/default-seller", { cache: "no-store" });
+        if (!res.ok) {
+          setDefaultSellerApplied(true);
+          return;
+        }
+        const data = (await res.json()) as { defaultSeller?: string | null };
+        if (data.defaultSeller && !sellerFilter) {
+          setSellerFilter(data.defaultSeller);
+        }
+      } finally {
+        setDefaultSellerApplied(true);
+      }
+    })();
+  }, [defaultSellerApplied, sellerFilter]);
 
   useEffect(() => {
     loadCustomers();
