@@ -2,6 +2,11 @@ import { prisma } from "@/lib/prisma";
 
 export const RESEARCH_CONFIG_KEY = "research_config";
 
+export type RegionsByCountry = Array<{
+  country: string;
+  regions: string[];
+}>;
+
 export type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
@@ -9,6 +14,7 @@ export type ResearchConfig = {
   defaultScope: "region" | "country";
   industries: string[];
   countries: string[];
+  regionsByCountry: RegionsByCountry;
   sellers: string[];
   requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
   remindersEnabled: boolean;
@@ -27,8 +33,35 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
   brandWebsites: [],
   extraInstructions: "",
   defaultScope: "region",
-  industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
+  industries: [
+    "Consumer Electronics",
+    "Computer & IT Retail",
+    "Mobile & Telecom Retail",
+    "Office Supplies & Workplace",
+    "B2B IT Reseller",
+    "B2B E-commerce",
+    "Managed Service Provider (MSP)",
+    "System Integrator",
+    "AV & Meeting Room Solutions",
+    "Smart Home Retail",
+    "Home Electronics & Appliances",
+    "Photo & Video Retail",
+    "Gaming & Esports Retail",
+    "Education & School Supplier",
+    "Public Sector Procurement",
+    "Industrial & Field Service Supply",
+    "Hospitality & POS Solutions",
+    "Security & Surveillance Integrator",
+    "Lifestyle & Design Retail",
+    "Marketplace / Pure E-tail"
+  ],
   countries: ["SE", "NO", "DK", "FI"],
+  regionsByCountry: [
+    { country: "SE", regions: ["Stockholm", "Vastra Gotaland", "Skane", "Ostergotland", "Jonkoping", "Uppsala", "Halland", "Sodermanland"] },
+    { country: "NO", regions: ["Oslo", "Viken", "Vestland", "Rogaland", "Trondelag", "Agder", "Innlandet", "Troms og Finnmark"] },
+    { country: "DK", regions: ["Hovedstaden", "Sjaelland", "Syddanmark", "Midtjylland", "Nordjylland"] },
+    { country: "FI", regions: ["Uusimaa", "Pirkanmaa", "Varsinais-Suomi", "Pohjois-Pohjanmaa", "Keski-Suomi", "Satakunta", "Pohjanmaa", "Lappi"] }
+  ],
   sellers: ["Team Nordics"],
   requiredCustomerFields: ["name", "industry", "country", "seller"],
   remindersEnabled: true,
@@ -45,6 +78,26 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
 function uniqueTrimmed(list: unknown, max = 50): string[] {
   if (!Array.isArray(list)) return [];
   return Array.from(new Set(list.map((item) => String(item ?? "").trim()).filter(Boolean))).slice(0, max);
+}
+
+function normalizeRegionsByCountry(input: unknown): RegionsByCountry {
+  if (!Array.isArray(input)) return DEFAULT_RESEARCH_CONFIG.regionsByCountry;
+
+  const result: RegionsByCountry = [];
+  const seen = new Set<string>();
+
+  for (const row of input) {
+    if (!row || typeof row !== "object") continue;
+    const value = row as Record<string, unknown>;
+    const country = String(value.country ?? "").trim().toUpperCase();
+    if (!country || seen.has(country)) continue;
+
+    const regions = uniqueTrimmed(value.regions, 120);
+    result.push({ country, regions });
+    seen.add(country);
+  }
+
+  return result.length ? result : DEFAULT_RESEARCH_CONFIG.regionsByCountry;
 }
 
 function normalizeRequiredFields(input: unknown): Array<"name" | "industry" | "country" | "seller"> {
@@ -83,6 +136,7 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
     defaultScope,
     industries: uniqueTrimmed(value.industries, 50),
     countries: uniqueTrimmed(value.countries, 50),
+    regionsByCountry: normalizeRegionsByCountry(value.regionsByCountry),
     sellers: uniqueTrimmed(value.sellers, 50),
     requiredCustomerFields: normalizeRequiredFields(value.requiredCustomerFields),
     remindersEnabled: value.remindersEnabled !== false,
@@ -112,6 +166,7 @@ export async function getResearchConfig(): Promise<ResearchConfig> {
       vendorWebsites: normalized.vendorWebsites.length ? normalized.vendorWebsites : DEFAULT_RESEARCH_CONFIG.vendorWebsites,
       industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
       countries: normalized.countries.length ? normalized.countries : DEFAULT_RESEARCH_CONFIG.countries,
+      regionsByCountry: normalized.regionsByCountry.length ? normalized.regionsByCountry : DEFAULT_RESEARCH_CONFIG.regionsByCountry,
       sellers: normalized.sellers.length ? normalized.sellers : DEFAULT_RESEARCH_CONFIG.sellers
     };
   } catch {
@@ -127,6 +182,7 @@ export async function saveResearchConfig(input: unknown): Promise<ResearchConfig
     vendorWebsites: normalized.vendorWebsites.length ? normalized.vendorWebsites : DEFAULT_RESEARCH_CONFIG.vendorWebsites,
     industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
     countries: normalized.countries.length ? normalized.countries : DEFAULT_RESEARCH_CONFIG.countries,
+    regionsByCountry: normalized.regionsByCountry.length ? normalized.regionsByCountry : DEFAULT_RESEARCH_CONFIG.regionsByCountry,
     sellers: normalized.sellers.length ? normalized.sellers : DEFAULT_RESEARCH_CONFIG.sellers
   };
 

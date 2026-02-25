@@ -70,6 +70,7 @@ type ResearchConfig = {
   defaultScope: "region" | "country";
   industries: string[];
   countries: string[];
+  regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
   requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
   remindersEnabled: boolean;
@@ -88,8 +89,35 @@ const EMPTY_CONFIG: ResearchConfig = {
   brandWebsites: [],
   extraInstructions: "",
   defaultScope: "region",
-  industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
+  industries: [
+    "Consumer Electronics",
+    "Computer & IT Retail",
+    "Mobile & Telecom Retail",
+    "Office Supplies & Workplace",
+    "B2B IT Reseller",
+    "B2B E-commerce",
+    "Managed Service Provider (MSP)",
+    "System Integrator",
+    "AV & Meeting Room Solutions",
+    "Smart Home Retail",
+    "Home Electronics & Appliances",
+    "Photo & Video Retail",
+    "Gaming & Esports Retail",
+    "Education & School Supplier",
+    "Public Sector Procurement",
+    "Industrial & Field Service Supply",
+    "Hospitality & POS Solutions",
+    "Security & Surveillance Integrator",
+    "Lifestyle & Design Retail",
+    "Marketplace / Pure E-tail"
+  ],
   countries: ["SE", "NO", "DK", "FI"],
+  regionsByCountry: [
+    { country: "SE", regions: ["Stockholm", "Vastra Gotaland", "Skane", "Ostergotland", "Jonkoping", "Uppsala", "Halland", "Sodermanland"] },
+    { country: "NO", regions: ["Oslo", "Viken", "Vestland", "Rogaland", "Trondelag", "Agder", "Innlandet", "Troms og Finnmark"] },
+    { country: "DK", regions: ["Hovedstaden", "Sjaelland", "Syddanmark", "Midtjylland", "Nordjylland"] },
+    { country: "FI", regions: ["Uusimaa", "Pirkanmaa", "Varsinais-Suomi", "Pohjois-Pohjanmaa", "Keski-Suomi", "Satakunta", "Pohjanmaa", "Lappi"] }
+  ],
   sellers: ["Team Nordics"],
   requiredCustomerFields: ["name", "industry", "country", "seller"],
   remindersEnabled: true,
@@ -102,6 +130,41 @@ const EMPTY_CONFIG: ResearchConfig = {
   gmailFrom: "",
   gmailReplyTo: ""
 };
+
+function formatRegionsByCountry(value: ResearchConfig["regionsByCountry"]): string {
+  return value
+    .map((entry) => {
+      const country = String(entry.country || "").trim().toUpperCase();
+      const regions = (entry.regions || []).map((region) => String(region || "").trim()).filter(Boolean);
+      if (!country || regions.length === 0) return "";
+      return `${country}: ${regions.join(" | ")}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseRegionsByCountry(text: string): ResearchConfig["regionsByCountry"] {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const result: ResearchConfig["regionsByCountry"] = [];
+
+  for (const line of lines) {
+    const separatorIndex = line.indexOf(":");
+    if (separatorIndex <= 0) continue;
+    const country = line.slice(0, separatorIndex).trim().toUpperCase();
+    if (!country || seen.has(country)) continue;
+    const regions = line
+      .slice(separatorIndex + 1)
+      .split("|")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (regions.length === 0) continue;
+    result.push({ country, regions });
+    seen.add(country);
+  }
+
+  return result;
+}
 
 function ResearchAdminContent() {
   const { lang } = useI18n();
@@ -276,6 +339,7 @@ function ResearchAdminContent() {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
+      regionsByCountry: parseRegionsByCountry(String(form.get("regionsByCountry") ?? "")),
       sellers: String(form.get("sellers") ?? "")
         .split("\n")
         .map((line) => line.trim())
@@ -593,6 +657,14 @@ function ResearchAdminContent() {
                 name="countries"
                 defaultValue={config.countries.join("\n")}
                 placeholder={lang === "sv" ? "Länder (t.ex. SE), en per rad" : "Countries (e.g. SE), one per line"}
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                name="regionsByCountry"
+                defaultValue={formatRegionsByCountry(config.regionsByCountry)}
+                placeholder={lang === "sv" ? "Regioner per land, format: SE: Stockholm | Skane" : "Regions per country, format: SE: Stockholm | Skane"}
               />
             </div>
             <div className="crm-row" style={{ marginTop: "0.6rem" }}>

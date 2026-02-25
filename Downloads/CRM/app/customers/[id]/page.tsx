@@ -76,6 +76,7 @@ type SalesResponse = {
 type FormConfig = {
   industries: string[];
   countries: string[];
+  regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
 };
 
@@ -85,8 +86,35 @@ type CustomerRegionRow = {
 };
 
 const DEFAULT_FORM_CONFIG: FormConfig = {
-  industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
+  industries: [
+    "Consumer Electronics",
+    "Computer & IT Retail",
+    "Mobile & Telecom Retail",
+    "Office Supplies & Workplace",
+    "B2B IT Reseller",
+    "B2B E-commerce",
+    "Managed Service Provider (MSP)",
+    "System Integrator",
+    "AV & Meeting Room Solutions",
+    "Smart Home Retail",
+    "Home Electronics & Appliances",
+    "Photo & Video Retail",
+    "Gaming & Esports Retail",
+    "Education & School Supplier",
+    "Public Sector Procurement",
+    "Industrial & Field Service Supply",
+    "Hospitality & POS Solutions",
+    "Security & Surveillance Integrator",
+    "Lifestyle & Design Retail",
+    "Marketplace / Pure E-tail"
+  ],
   countries: ["SE", "NO", "DK", "FI"],
+  regionsByCountry: [
+    { country: "SE", regions: ["Stockholm", "Vastra Gotaland", "Skane", "Ostergotland", "Jonkoping", "Uppsala", "Halland", "Sodermanland"] },
+    { country: "NO", regions: ["Oslo", "Viken", "Vestland", "Rogaland", "Trondelag", "Agder", "Innlandet", "Troms og Finnmark"] },
+    { country: "DK", regions: ["Hovedstaden", "Sjaelland", "Syddanmark", "Midtjylland", "Nordjylland"] },
+    { country: "FI", regions: ["Uusimaa", "Pirkanmaa", "Varsinais-Suomi", "Pohjois-Pohjanmaa", "Keski-Suomi", "Satakunta", "Pohjanmaa", "Lappi"] }
+  ],
   sellers: ["Team Nordics"]
 };
 
@@ -173,11 +201,29 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       if (settingsRes.ok) {
         const data = (await settingsRes.json()) as { config?: FormConfig };
         if (data.config) {
+          const settingsRegionMap: Record<string, string[]> = Array.isArray(data.config.regionsByCountry)
+            ? Object.fromEntries(
+                data.config.regionsByCountry
+                  .map((entry) => [
+                    String(entry.country ?? "").trim().toUpperCase(),
+                    buildOptionList(Array.isArray(entry.regions) ? entry.regions : [])
+                  ])
+                  .filter(([country, regions]) => country && regions.length > 0)
+              )
+            : {};
+
           setFormConfig({
             industries: Array.isArray(data.config.industries) ? data.config.industries : DEFAULT_FORM_CONFIG.industries,
             countries: Array.isArray(data.config.countries) ? data.config.countries : DEFAULT_FORM_CONFIG.countries,
+            regionsByCountry: Array.isArray(data.config.regionsByCountry)
+              ? data.config.regionsByCountry
+              : DEFAULT_FORM_CONFIG.regionsByCountry,
             sellers: Array.isArray(data.config.sellers) ? data.config.sellers : DEFAULT_FORM_CONFIG.sellers
           });
+          if (Object.keys(settingsRegionMap).length > 0) {
+            setRegionsByCountry((prev) => ({ ...settingsRegionMap, ...prev }));
+            setAllRegions(buildOptionList(...Object.values(settingsRegionMap)));
+          }
         }
       }
 
@@ -255,8 +301,18 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const industryOptions = buildOptionList(formConfig.industries, [customer?.industry]);
   const countryOptions = buildOptionList(formConfig.countries, [customer?.country]);
   const sellerOptions = buildOptionList(formConfig.sellers, [customer?.seller]);
+  const settingsRegionMap: Record<string, string[]> = Object.fromEntries(
+    formConfig.regionsByCountry
+      .map((entry) => [
+        String(entry.country ?? "").trim().toUpperCase(),
+        buildOptionList(Array.isArray(entry.regions) ? entry.regions : [])
+      ])
+      .filter(([country, regions]) => country && regions.length > 0)
+  );
+  const regionMap = Object.keys(settingsRegionMap).length ? settingsRegionMap : regionsByCountry;
   const scopedRegionOptions = selectedCountry ? regionsByCountry[selectedCountry] ?? [] : allRegions;
-  const regionOptions = buildOptionList(scopedRegionOptions, [customer?.region]);
+  const regionOptionsFromMap = selectedCountry ? regionMap[selectedCountry] ?? [] : buildOptionList(...Object.values(regionMap));
+  const regionOptions = buildOptionList(regionOptionsFromMap.length ? regionOptionsFromMap : scopedRegionOptions, [customer?.region]);
   const latestCustomerUpdate = activities.find((activity) => activity.type === "CUSTOMER_UPDATED");
   const lastSavedBy = latestCustomerUpdate?.actorName || currentUserEmail || "-";
   const savedAtText = customer

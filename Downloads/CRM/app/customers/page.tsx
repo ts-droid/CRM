@@ -26,7 +26,28 @@ type FormConfig = {
 };
 
 const DEFAULT_CONFIG: FormConfig = {
-  industries: ["Consumer Electronics", "Retail", "E-commerce", "B2B Reseller", "Enterprise IT"],
+  industries: [
+    "Consumer Electronics",
+    "Computer & IT Retail",
+    "Mobile & Telecom Retail",
+    "Office Supplies & Workplace",
+    "B2B IT Reseller",
+    "B2B E-commerce",
+    "Managed Service Provider (MSP)",
+    "System Integrator",
+    "AV & Meeting Room Solutions",
+    "Smart Home Retail",
+    "Home Electronics & Appliances",
+    "Photo & Video Retail",
+    "Gaming & Esports Retail",
+    "Education & School Supplier",
+    "Public Sector Procurement",
+    "Industrial & Field Service Supply",
+    "Hospitality & POS Solutions",
+    "Security & Surveillance Integrator",
+    "Lifestyle & Design Retail",
+    "Marketplace / Pure E-tail"
+  ],
   countries: ["SE", "NO", "DK", "FI"],
   sellers: ["Team Nordics"],
   requiredCustomerFields: ["name", "industry", "country", "seller"]
