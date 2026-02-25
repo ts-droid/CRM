@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/components/i18n";
+import { useSearchParams } from "next/navigation";
 
 type TabKey = "import-export" | "research" | "settings";
 
@@ -40,9 +41,13 @@ const EMPTY_CONFIG: ResearchConfig = {
   requiredCustomerFields: ["name", "industry", "country", "seller"]
 };
 
-export default function ResearchAdminPage() {
+function ResearchAdminContent() {
   const { lang } = useI18n();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabKey>("research");
+  const [researchCustomerId, setResearchCustomerId] = useState("");
+  const [researchCompanyName, setResearchCompanyName] = useState("");
+  const [researchScope, setResearchScope] = useState<"region" | "country">("region");
 
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState<string>("");
@@ -79,6 +84,25 @@ export default function ResearchAdminPage() {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "import-export" || tabParam === "research" || tabParam === "settings") {
+      setTab(tabParam);
+    }
+
+    const customerIdParam = searchParams.get("customerId");
+    const companyNameParam = searchParams.get("companyName");
+    const scopeParam = searchParams.get("scope");
+
+    if (customerIdParam) setResearchCustomerId(customerIdParam);
+    if (companyNameParam) setResearchCompanyName(companyNameParam);
+    if (scopeParam === "country" || scopeParam === "region") {
+      setResearchScope(scopeParam);
+    } else {
+      setResearchScope(config.defaultScope);
+    }
+  }, [searchParams, config.defaultScope]);
+
   async function onResearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setResearchLoading(true);
@@ -92,9 +116,9 @@ export default function ResearchAdminPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerId: String(form.get("customerId") ?? "").trim() || undefined,
-          companyName: String(form.get("companyName") ?? "").trim() || undefined,
-          scope: String(form.get("scope") ?? config.defaultScope),
+          customerId: researchCustomerId.trim() || undefined,
+          companyName: researchCompanyName.trim() || undefined,
+          scope: researchScope,
           websites: websitesRaw
             .split("\n")
             .map((line) => line.trim())
@@ -250,9 +274,21 @@ export default function ResearchAdminPage() {
             <h3>{lang === "sv" ? "Research och AI-prompt" : "Research and AI prompt"}</h3>
             <form onSubmit={onResearchSubmit} style={{ marginTop: "0.7rem" }}>
               <div className="crm-row">
-                <input className="crm-input" name="customerId" placeholder={lang === "sv" ? "Kund-ID (valfritt)" : "Customer ID (optional)"} />
-                <input className="crm-input" name="companyName" placeholder={lang === "sv" ? "Bolagsnamn (om inget kund-ID)" : "Company name (if no customer ID)"} />
-                <select className="crm-select" name="scope" defaultValue={config.defaultScope}>
+                <input
+                  className="crm-input"
+                  name="customerId"
+                  value={researchCustomerId}
+                  onChange={(event) => setResearchCustomerId(event.target.value)}
+                  placeholder={lang === "sv" ? "Kund-ID (valfritt)" : "Customer ID (optional)"}
+                />
+                <input
+                  className="crm-input"
+                  name="companyName"
+                  value={researchCompanyName}
+                  onChange={(event) => setResearchCompanyName(event.target.value)}
+                  placeholder={lang === "sv" ? "Bolagsnamn (om inget kund-ID)" : "Company name (if no customer ID)"}
+                />
+                <select className="crm-select" name="scope" value={researchScope} onChange={(event) => setResearchScope(event.target.value === "country" ? "country" : "region")}>
                   <option value="region">{lang === "sv" ? "Liknande på region" : "Similar by region"}</option>
                   <option value="country">{lang === "sv" ? "Liknande på land" : "Similar by country"}</option>
                 </select>
@@ -403,5 +439,13 @@ export default function ResearchAdminPage() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+export default function ResearchAdminPage() {
+  return (
+    <Suspense fallback={<section className="crm-card">Loading research...</section>}>
+      <ResearchAdminContent />
+    </Suspense>
   );
 }

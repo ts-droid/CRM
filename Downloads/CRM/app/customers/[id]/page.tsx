@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useI18n } from "@/components/i18n";
 
@@ -267,6 +268,12 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <button className="crm-button crm-button-secondary" type="button" onClick={runSimilarSearch}>
               {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
             </button>
+            <Link
+              href={`/admin/research?tab=research&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}`}
+              className="crm-button crm-button-secondary"
+            >
+              {lang === "sv" ? "Öppna research för kund" : "Open research for customer"}
+            </Link>
           </div>
           {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
         </form>
