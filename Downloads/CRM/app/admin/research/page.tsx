@@ -5,6 +5,7 @@ import { useI18n } from "@/components/i18n";
 import { useSearchParams } from "next/navigation";
 
 type TabKey = "import-export" | "research" | "settings";
+type SettingsTabKey = "base" | "prompts" | "notifications";
 
 type ResearchResponse = {
   query: {
@@ -248,6 +249,7 @@ function ResearchAdminContent() {
   const [config, setConfig] = useState<ResearchConfig>(EMPTY_CONFIG);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsStatus, setSettingsStatus] = useState<string>("");
+  const [settingsTab, setSettingsTab] = useState<SettingsTabKey>("base");
   const [sellerDraft, setSellerDraft] = useState("");
   const [reassignFromSeller, setReassignFromSeller] = useState("");
   const [reassignToSeller, setReassignToSeller] = useState("");
@@ -808,163 +810,193 @@ function ResearchAdminContent() {
               ? "Ange Vendora/brand-webbsidor och extra instruktioner som alltid ska användas i research-flödet."
               : "Set Vendora/brand websites and extra instructions always used in research."}
           </p>
+          <div className="crm-row" style={{ marginTop: "0.7rem" }}>
+            <button
+              type="button"
+              className={`crm-tab ${settingsTab === "base" ? "active" : ""}`}
+              onClick={() => setSettingsTab("base")}
+            >
+              {lang === "sv" ? "Grundinställningar" : "Base settings"}
+            </button>
+            <button
+              type="button"
+              className={`crm-tab ${settingsTab === "prompts" ? "active" : ""}`}
+              onClick={() => setSettingsTab("prompts")}
+            >
+              {lang === "sv" ? "Prompter" : "Prompts"}
+            </button>
+            <button
+              type="button"
+              className={`crm-tab ${settingsTab === "notifications" ? "active" : ""}`}
+              onClick={() => setSettingsTab("notifications")}
+            >
+              {lang === "sv" ? "Mail/Slack" : "Mail/Slack"}
+            </button>
+          </div>
 
           <form key={settingsFormKey} onSubmit={onSettingsSave} style={{ marginTop: "0.7rem" }}>
-            <div className="crm-row">
-              <select className="crm-select" name="defaultScope" defaultValue={config.defaultScope}>
-                <option value="region">{lang === "sv" ? "Default scope: Region" : "Default scope: Region"}</option>
-                <option value="country">{lang === "sv" ? "Default scope: Land" : "Default scope: Country"}</option>
-              </select>
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="vendorWebsites"
-                defaultValue={config.vendorWebsites.join("\n")}
-                placeholder={lang === "sv" ? "Vendora-webbsidor, en URL per rad" : "Vendora websites, one URL per line"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="brandWebsites"
-                defaultValue={config.brandWebsites.join("\n")}
-                placeholder={lang === "sv" ? "Brand-webbsidor, en URL per rad" : "Brand websites, one URL per line"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="industries"
-                defaultValue={config.industries.join("\n")}
-                placeholder={lang === "sv" ? "Branscher, en per rad" : "Industries, one per line"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="countries"
-                defaultValue={config.countries.join("\n")}
-                placeholder={lang === "sv" ? "Länder (t.ex. SE), en per rad" : "Countries (e.g. SE), one per line"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="regionsByCountry"
-                defaultValue={formatRegionsByCountry(config.regionsByCountry)}
-                placeholder={lang === "sv" ? "Regioner per land, format: SE: Stockholm | Skane" : "Regions per country, format: SE: Stockholm | Skane"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="sellers"
-                defaultValue={config.sellers.join("\n")}
-                placeholder={lang === "sv" ? "Säljare, en per rad" : "Sellers, one per line"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.55rem" }}>
-              <input
-                className="crm-input"
-                value={sellerDraft}
-                onChange={(event) => setSellerDraft(event.target.value)}
-                placeholder={lang === "sv" ? "Ny säljare (namn)" : "New seller (name)"}
-              />
-              <button className="crm-button crm-button-secondary" type="button" onClick={addSellerDraft}>
-                {lang === "sv" ? "Lägg till säljare" : "Add seller"}
-              </button>
-              <select className="crm-select" defaultValue="" onChange={(event) => removeSeller(event.target.value)}>
-                <option value="" disabled>{lang === "sv" ? "Ta bort säljare" : "Remove seller"}</option>
-                {config.sellers.map((seller) => (
-                  <option key={seller} value={seller}>{seller}</option>
-                ))}
-              </select>
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="sellerAssignments"
-                defaultValue={formatSellerAssignments(config.sellerAssignments)}
-                placeholder={
-                  lang === "sv"
-                    ? "Säljare till e-post, format: Team Nordics: ts@vendora.se, anna@vendora.se"
-                    : "Seller to email mapping, format: Team Nordics: ts@vendora.se, anna@vendora.se"
-                }
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.55rem" }}>
-              <select className="crm-select" value={reassignFromSeller} onChange={(event) => setReassignFromSeller(event.target.value)}>
-                <option value="">{lang === "sv" ? "Flytta från säljare" : "Move from seller"}</option>
-                {config.sellers.map((seller) => (
-                  <option key={`from-${seller}`} value={seller}>{seller}</option>
-                ))}
-              </select>
-              <select className="crm-select" value={reassignToSeller} onChange={(event) => setReassignToSeller(event.target.value)}>
-                <option value="">{lang === "sv" ? "Flytta till säljare" : "Move to seller"}</option>
-                {config.sellers.map((seller) => (
-                  <option key={`to-${seller}`} value={seller}>{seller}</option>
-                ))}
-              </select>
-              <button className="crm-button crm-button-secondary" type="button" disabled={reassignLoading} onClick={runSellerReassign}>
-                {reassignLoading ? (lang === "sv" ? "Flyttar..." : "Moving...") : (lang === "sv" ? "Byt säljare på kunder" : "Reassign customers")}
-              </button>
-            </div>
-            {reassignStatus ? <p className="crm-subtle" style={{ marginTop: "0.4rem" }}>{reassignStatus}</p> : null}
-            <div style={{ marginTop: "0.6rem" }}>
-              <p className="crm-subtle">{lang === "sv" ? "Obligatoriska kundfält" : "Required customer fields"}</p>
-              <div className="crm-row" style={{ marginTop: "0.4rem" }}>
-                <label className="crm-check">
-                  <input type="checkbox" name="requiredCustomerFields" value="name" defaultChecked={config.requiredCustomerFields.includes("name")} />
-                  <span>Name</span>
-                </label>
-                <label className="crm-check">
-                  <input type="checkbox" name="requiredCustomerFields" value="industry" defaultChecked={config.requiredCustomerFields.includes("industry")} />
-                  <span>Industry</span>
-                </label>
-                <label className="crm-check">
-                  <input type="checkbox" name="requiredCustomerFields" value="country" defaultChecked={config.requiredCustomerFields.includes("country")} />
-                  <span>Country</span>
-                </label>
-                <label className="crm-check">
-                  <input type="checkbox" name="requiredCustomerFields" value="seller" defaultChecked={config.requiredCustomerFields.includes("seller")} />
-                  <span>Seller</span>
-                </label>
+            <section style={{ display: settingsTab === "base" ? "block" : "none" }}>
+              <div className="crm-row">
+                <select className="crm-select" name="defaultScope" defaultValue={config.defaultScope}>
+                  <option value="region">{lang === "sv" ? "Default scope: Region" : "Default scope: Region"}</option>
+                  <option value="country">{lang === "sv" ? "Default scope: Land" : "Default scope: Country"}</option>
+                </select>
               </div>
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="researchBasePrompt"
-                defaultValue={config.researchBasePrompt}
-                placeholder={lang === "sv" ? "Global grundprompt för research" : "Global base prompt for research"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="quickSimilarBasePrompt"
-                defaultValue={config.quickSimilarBasePrompt}
-                placeholder={lang === "sv" ? "Grundprompt för snabb liknande-kunder AI" : "Base prompt for quick similar-customers AI"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="quickSimilarExtraInstructions"
-                defaultValue={config.quickSimilarExtraInstructions}
-                placeholder={lang === "sv" ? "Extra instruktioner för snabb liknande-kunder AI" : "Extra instructions for quick similar-customers AI"}
-              />
-            </div>
-            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-              <textarea
-                className="crm-textarea"
-                name="extraInstructions"
-                defaultValue={config.extraInstructions}
-                placeholder={lang === "sv" ? "Extra AI-instruktioner" : "Extra AI instructions"}
-              />
-            </div>
-            <div style={{ marginTop: "0.8rem" }}>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="vendorWebsites"
+                  defaultValue={config.vendorWebsites.join("\n")}
+                  placeholder={lang === "sv" ? "Vendora-webbsidor, en URL per rad" : "Vendora websites, one URL per line"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="brandWebsites"
+                  defaultValue={config.brandWebsites.join("\n")}
+                  placeholder={lang === "sv" ? "Brand-webbsidor, en URL per rad" : "Brand websites, one URL per line"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="industries"
+                  defaultValue={config.industries.join("\n")}
+                  placeholder={lang === "sv" ? "Branscher, en per rad" : "Industries, one per line"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="countries"
+                  defaultValue={config.countries.join("\n")}
+                  placeholder={lang === "sv" ? "Länder (t.ex. SE), en per rad" : "Countries (e.g. SE), one per line"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="regionsByCountry"
+                  defaultValue={formatRegionsByCountry(config.regionsByCountry)}
+                  placeholder={lang === "sv" ? "Regioner per land, format: SE: Stockholm | Skane" : "Regions per country, format: SE: Stockholm | Skane"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="sellers"
+                  defaultValue={config.sellers.join("\n")}
+                  placeholder={lang === "sv" ? "Säljare, en per rad" : "Sellers, one per line"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.55rem" }}>
+                <input
+                  className="crm-input"
+                  value={sellerDraft}
+                  onChange={(event) => setSellerDraft(event.target.value)}
+                  placeholder={lang === "sv" ? "Ny säljare (namn)" : "New seller (name)"}
+                />
+                <button className="crm-button crm-button-secondary" type="button" onClick={addSellerDraft}>
+                  {lang === "sv" ? "Lägg till säljare" : "Add seller"}
+                </button>
+                <select className="crm-select" defaultValue="" onChange={(event) => removeSeller(event.target.value)}>
+                  <option value="" disabled>{lang === "sv" ? "Ta bort säljare" : "Remove seller"}</option>
+                  {config.sellers.map((seller) => (
+                    <option key={seller} value={seller}>{seller}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="sellerAssignments"
+                  defaultValue={formatSellerAssignments(config.sellerAssignments)}
+                  placeholder={
+                    lang === "sv"
+                      ? "Säljare till e-post, format: Team Nordics: ts@vendora.se, anna@vendora.se"
+                      : "Seller to email mapping, format: Team Nordics: ts@vendora.se, anna@vendora.se"
+                  }
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.55rem" }}>
+                <select className="crm-select" value={reassignFromSeller} onChange={(event) => setReassignFromSeller(event.target.value)}>
+                  <option value="">{lang === "sv" ? "Flytta från säljare" : "Move from seller"}</option>
+                  {config.sellers.map((seller) => (
+                    <option key={`from-${seller}`} value={seller}>{seller}</option>
+                  ))}
+                </select>
+                <select className="crm-select" value={reassignToSeller} onChange={(event) => setReassignToSeller(event.target.value)}>
+                  <option value="">{lang === "sv" ? "Flytta till säljare" : "Move to seller"}</option>
+                  {config.sellers.map((seller) => (
+                    <option key={`to-${seller}`} value={seller}>{seller}</option>
+                  ))}
+                </select>
+                <button className="crm-button crm-button-secondary" type="button" disabled={reassignLoading} onClick={runSellerReassign}>
+                  {reassignLoading ? (lang === "sv" ? "Flyttar..." : "Moving...") : (lang === "sv" ? "Byt säljare på kunder" : "Reassign customers")}
+                </button>
+              </div>
+              {reassignStatus ? <p className="crm-subtle" style={{ marginTop: "0.4rem" }}>{reassignStatus}</p> : null}
+              <div style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle">{lang === "sv" ? "Obligatoriska kundfält" : "Required customer fields"}</p>
+                <div className="crm-row" style={{ marginTop: "0.4rem" }}>
+                  <label className="crm-check">
+                    <input type="checkbox" name="requiredCustomerFields" value="name" defaultChecked={config.requiredCustomerFields.includes("name")} />
+                    <span>Name</span>
+                  </label>
+                  <label className="crm-check">
+                    <input type="checkbox" name="requiredCustomerFields" value="industry" defaultChecked={config.requiredCustomerFields.includes("industry")} />
+                    <span>Industry</span>
+                  </label>
+                  <label className="crm-check">
+                    <input type="checkbox" name="requiredCustomerFields" value="country" defaultChecked={config.requiredCustomerFields.includes("country")} />
+                    <span>Country</span>
+                  </label>
+                  <label className="crm-check">
+                    <input type="checkbox" name="requiredCustomerFields" value="seller" defaultChecked={config.requiredCustomerFields.includes("seller")} />
+                    <span>Seller</span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section style={{ display: settingsTab === "prompts" ? "block" : "none" }}>
+              <div className="crm-row">
+                <textarea
+                  className="crm-textarea"
+                  name="researchBasePrompt"
+                  defaultValue={config.researchBasePrompt}
+                  placeholder={lang === "sv" ? "Global grundprompt för research" : "Global base prompt for research"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="quickSimilarBasePrompt"
+                  defaultValue={config.quickSimilarBasePrompt}
+                  placeholder={lang === "sv" ? "Grundprompt för snabb liknande-kunder AI" : "Base prompt for quick similar-customers AI"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="quickSimilarExtraInstructions"
+                  defaultValue={config.quickSimilarExtraInstructions}
+                  placeholder={lang === "sv" ? "Extra instruktioner för snabb liknande-kunder AI" : "Extra instructions for quick similar-customers AI"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="extraInstructions"
+                  defaultValue={config.extraInstructions}
+                  placeholder={lang === "sv" ? "Extra AI-instruktioner" : "Extra AI instructions"}
+                />
+              </div>
+            </section>
+
+            <section style={{ display: settingsTab === "notifications" ? "block" : "none" }}>
+              <div style={{ marginTop: "0.1rem" }}>
               <p className="crm-subtle">{lang === "sv" ? "Påminnelser och notifieringar" : "Reminders and notifications"}</p>
               <div className="crm-row" style={{ marginTop: "0.5rem" }}>
                 <label className="crm-check">
@@ -1044,6 +1076,7 @@ function ResearchAdminContent() {
               </div>
               {remindersStatus ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{remindersStatus}</p> : null}
             </div>
+            </section>
             <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={settingsLoading}>
               {settingsLoading ? (lang === "sv" ? "Sparar..." : "Saving...") : (lang === "sv" ? "Spara inställningar" : "Save settings")}
             </button>
