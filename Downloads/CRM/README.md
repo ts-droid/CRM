@@ -35,6 +35,9 @@ För notifieringar:
 - `SMTP_USER`
 - `SMTP_PASS` (Gmail app password)
 
+Feature flag:
+- `NEXT_PUBLIC_FEATURE_SALES_SECTION=false` (sektionen byggs in men visas inte)
+
 ## 3) Prisma migration och client
 
 ```bash

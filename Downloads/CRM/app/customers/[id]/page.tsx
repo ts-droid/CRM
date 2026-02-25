@@ -50,6 +50,28 @@ type Activity = {
   createdAt: string;
 };
 
+type SalesResponse = {
+  customerId: string;
+  count: number;
+  totals: {
+    netSales: number;
+    unitsSold: number;
+    ordersCount: number;
+    averageGrossMargin: number | null;
+  };
+  rows: Array<{
+    id: string;
+    source: string;
+    periodStart: string;
+    periodEnd: string;
+    currency: string;
+    netSales: number | null;
+    grossMargin: number | null;
+    unitsSold: number | null;
+    ordersCount: number | null;
+  }>;
+};
+
 type ContactDraft = {
   key: string;
   name: string;
@@ -73,6 +95,7 @@ function emptyContactDraft(): ContactDraft {
 }
 
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
+  const salesSectionEnabled = process.env.NEXT_PUBLIC_FEATURE_SALES_SECTION === "true";
   const { lang } = useI18n();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "contacts" | "plans" | "activity">("overview");
@@ -82,6 +105,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [contactStatus, setContactStatus] = useState<string>("");
   const [contactsSaving, setContactsSaving] = useState(false);
   const [newContacts, setNewContacts] = useState<ContactDraft[]>([emptyContactDraft()]);
+  const [salesData, setSalesData] = useState<SalesResponse | null>(null);
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [salesError, setSalesError] = useState("");
   const [loading, setLoading] = useState(true);
 
   async function loadCustomer() {
@@ -105,9 +131,29 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     setActivities((await res.json()) as Activity[]);
   }
 
+  async function loadSales() {
+    if (!salesSectionEnabled) return;
+    setSalesLoading(true);
+    setSalesError("");
+    try {
+      const res = await fetch(`/api/customers/${params.id}/sales?limit=12`, { cache: "no-store" });
+      if (!res.ok) {
+        setSalesError(lang === "sv" ? "Kunde inte läsa försäljning." : "Could not load sales.");
+        setSalesLoading(false);
+        return;
+      }
+      setSalesData((await res.json()) as SalesResponse);
+    } catch {
+      setSalesError(lang === "sv" ? "Kunde inte läsa försäljning." : "Could not load sales.");
+    } finally {
+      setSalesLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadCustomer();
     loadActivities();
+    loadSales();
   }, [params.id, lang]);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
@@ -333,6 +379,74 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
             </form>
           </section>
+
+          {salesSectionEnabled ? (
+            <section className="crm-card">
+              <h3>{lang === "sv" ? "Försäljning (beta)" : "Sales (beta)"}</h3>
+              <p className="crm-subtle" style={{ marginTop: "0.4rem" }}>
+                {lang === "sv"
+                  ? "Periodiserade försäljningssiffror för kunden. Sektionen är förberedd för ERP/API-integration."
+                  : "Period-based sales figures for this customer. Section is prepared for ERP/API integration."}
+              </p>
+
+              {salesLoading ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{lang === "sv" ? "Laddar..." : "Loading..."}</p> : null}
+              {salesError ? <p className="crm-subtle" style={{ marginTop: "0.6rem", color: "#b42318" }}>{salesError}</p> : null}
+
+              {salesData ? (
+                <>
+                  <div className="crm-grid" style={{ marginTop: "0.7rem" }}>
+                    <article className="crm-item">
+                      <p className="crm-subtle">{lang === "sv" ? "Nettoförsäljning" : "Net sales"}</p>
+                      <strong>
+                        {salesData.totals.netSales.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
+                        {salesData.rows[0]?.currency ?? "SEK"}
+                      </strong>
+                    </article>
+                    <article className="crm-item">
+                      <p className="crm-subtle">{lang === "sv" ? "Order" : "Orders"}</p>
+                      <strong>{salesData.totals.ordersCount}</strong>
+                    </article>
+                    <article className="crm-item">
+                      <p className="crm-subtle">{lang === "sv" ? "Sålda enheter" : "Units sold"}</p>
+                      <strong>{salesData.totals.unitsSold}</strong>
+                    </article>
+                    <article className="crm-item">
+                      <p className="crm-subtle">{lang === "sv" ? "Snittmarginal" : "Avg margin"}</p>
+                      <strong>
+                        {typeof salesData.totals.averageGrossMargin === "number"
+                          ? `${salesData.totals.averageGrossMargin.toFixed(2)}%`
+                          : "-"}
+                      </strong>
+                    </article>
+                  </div>
+
+                  <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                    {salesData.rows.length === 0 ? (
+                      <p className="crm-empty">{lang === "sv" ? "Inga försäljningsrader ännu." : "No sales rows yet."}</p>
+                    ) : (
+                      salesData.rows.map((row) => (
+                        <article key={row.id} className="crm-item">
+                          <div className="crm-item-head">
+                            <strong>
+                              {new Date(row.periodStart).toLocaleDateString()} - {new Date(row.periodEnd).toLocaleDateString()}
+                            </strong>
+                            <span className="crm-badge">{row.source}</span>
+                          </div>
+                          <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                            {(lang === "sv" ? "Netto" : "Net")}: {row.netSales ?? "-"} {row.currency} ·{" "}
+                            {(lang === "sv" ? "Order" : "Orders")}: {row.ordersCount ?? "-"} ·{" "}
+                            {(lang === "sv" ? "Enheter" : "Units")}: {row.unitsSold ?? "-"} ·{" "}
+                            {(lang === "sv" ? "Marginal" : "Margin")}:{" "}
+                            {typeof row.grossMargin === "number" ? `${row.grossMargin}%` : "-"}
+                          </p>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </section>
+          ) : null}
         </>
       ) : null}
 
