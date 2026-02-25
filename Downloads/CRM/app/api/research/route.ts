@@ -64,6 +64,25 @@ function extractJsonObject(text: string): Record<string, unknown> | null {
   return null;
 }
 
+function extractJsonValue(text: string): unknown {
+  const trimmed = text.trim();
+  const candidates = [trimmed];
+  const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
+  if (fencedMatch?.[1]) candidates.push(fencedMatch[1].trim());
+  const genericFence = trimmed.match(/```\s*([\s\S]*?)```/i);
+  if (genericFence?.[1]) candidates.push(genericFence[1].trim());
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return null;
+}
+
 function registryHintsForCountry(country: string | null): string[] {
   const normalized = (country || "").trim().toUpperCase();
   if (normalized === "SE") return ["Bolagsverket", "allabolag.se", "proff.se", "hitta.se/foretag"];
@@ -273,11 +292,26 @@ export async function POST(req: Request) {
       }
 
       if (aiResult?.outputText) {
-        const parsed = extractJsonObject(aiResult.outputText);
-        const rows = Array.isArray(parsed?.candidates) ? parsed.candidates : [];
+        const parsedAny = extractJsonValue(aiResult.outputText);
+        const parsedObj = parsedAny && typeof parsedAny === "object" && !Array.isArray(parsedAny)
+          ? (parsedAny as Record<string, unknown>)
+          : null;
+        const rows = Array.isArray(parsedAny)
+          ? parsedAny
+          : Array.isArray(parsedObj?.candidates)
+          ? parsedObj.candidates
+          : Array.isArray(parsedObj?.similarCustomers)
+          ? parsedObj.similarCustomers
+          : Array.isArray(parsedObj?.similar_customers)
+          ? parsedObj.similar_customers
+          : Array.isArray(parsedObj?.results)
+          ? parsedObj.results
+          : [];
         similarCustomers = rows
           .map((row, index) => {
             const item = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+            const parsedPotential = Number(item.potentialScore ?? item.potential ?? 50);
+            const parsedMatch = Number(item.matchScore ?? item.match ?? item.score ?? 50);
             return {
               id: `external-${index + 1}`,
               name: String(item.name ?? "").trim(),
@@ -285,13 +319,20 @@ export async function POST(req: Request) {
               region: item.region ? String(item.region) : null,
               industry: item.industry ? String(item.industry) : null,
               seller: null,
-              potentialScore: Number(item.potentialScore ?? 50),
-              matchScore: Number(item.matchScore ?? 50),
-              website: item.website ? String(item.website) : null,
-              organizationNumber: item.organizationNumber ? String(item.organizationNumber) : null,
-              reason: item.reason ? String(item.reason) : null,
-              sourceType: item.sourceType ? String(item.sourceType) : null,
-              sourceUrl: item.sourceUrl ? String(item.sourceUrl) : null,
+              potentialScore: Number.isFinite(parsedPotential) ? parsedPotential : 50,
+              matchScore: Number.isFinite(parsedMatch) ? parsedMatch : 50,
+              website: item.website ? String(item.website) : item.url ? String(item.url) : null,
+              organizationNumber:
+                item.organizationNumber
+                  ? String(item.organizationNumber)
+                  : item.orgNumber
+                  ? String(item.orgNumber)
+                  : item.org_no
+                  ? String(item.org_no)
+                  : null,
+              reason: item.reason ? String(item.reason) : item.rationale ? String(item.rationale) : null,
+              sourceType: item.sourceType ? String(item.sourceType) : item.source_type ? String(item.source_type) : null,
+              sourceUrl: item.sourceUrl ? String(item.sourceUrl) : item.source ? String(item.source) : null,
               confidence: item.confidence ? String(item.confidence) : null
             };
           })
