@@ -33,6 +33,12 @@ type TavilyResponse = {
 };
 
 const BLOCKED_DOMAINS = new Set([
+  "trustpilot.com",
+  "companydata.com",
+  "crunchbase.com",
+  "owler.com",
+  "zoominfo.com",
+  "apollo.io",
   "yelp.com",
   "glassdoor.com",
   "bullfincher.io",
@@ -43,6 +49,31 @@ const BLOCKED_DOMAINS = new Set([
   "wikipedia.org",
   "linkedin.com"
 ]);
+
+const BLOCKED_PATH_PARTS = [
+  "/review/",
+  "/reviews/",
+  "/ranking/",
+  "/rankings/",
+  "/list/",
+  "/lists/",
+  "/blog/",
+  "/news/",
+  "/article/",
+  "/articles/",
+  "/category/",
+  "/categories/",
+  "/wp-content/",
+  "/files/",
+  "/download",
+  "/downloads/",
+  "/pdf",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".ppt",
+  ".pptx"
+];
 
 const GENERIC_TITLE_PATTERNS = [
   /\btop\s+\d+/i,
@@ -91,6 +122,19 @@ function toDomain(value: string | null | undefined): string {
   }
 }
 
+function isBlockedPath(value: string | null | undefined): boolean {
+  const raw = String(value ?? "").trim();
+  if (!raw) return false;
+  try {
+    const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    const normalizedPath = `${url.pathname}${url.search}`.toLowerCase();
+    if (!normalizedPath || normalizedPath === "/" || normalizedPath.length <= 1) return false;
+    return BLOCKED_PATH_PARTS.some((part) => normalizedPath.includes(part));
+  } catch {
+    return true;
+  }
+}
+
 function guessNameFromTitleOrUrl(title: string, url: string): string {
   const cleanTitle = String(title)
     .replace(/\s+/g, " ")
@@ -125,8 +169,10 @@ function isBlockedDomain(domain: string): boolean {
 }
 
 function looksLikeCompany(seed: DiscoverySeed): boolean {
-  const domain = toDomain(seed.website || seed.sourceUrl);
+  const url = seed.website || seed.sourceUrl;
+  const domain = toDomain(url);
   if (isBlockedDomain(domain)) return false;
+  if (isBlockedPath(url)) return false;
 
   const titleLooksGeneric = isLikelyGenericTitle(seed.name);
   if (!titleLooksGeneric && seed.name.length >= 3) return true;
@@ -263,8 +309,10 @@ export async function discoverExternalSeeds(input: DiscoveryInput): Promise<{
 
   for (const row of [...serperAll, ...tavilyAll]) {
     if (!looksLikeCompany(row)) continue;
-    const normalizedName = normalizeCompanyName(row.name);
     const domain = toDomain(row.website || row.sourceUrl);
+    const domainHead = domain.split(".")[0]?.replace(/[-_]+/g, " ").trim() || "";
+    const candidateName = isLikelyGenericTitle(row.name) && domainHead ? domainHead : row.name;
+    const normalizedName = normalizeCompanyName(candidateName);
     if (!normalizedName || seenByName.has(normalizedName)) continue;
     if (domain) {
       if (excludeDomain && domain === excludeDomain) continue;
@@ -272,7 +320,10 @@ export async function discoverExternalSeeds(input: DiscoveryInput): Promise<{
     }
     seenByName.add(normalizedName);
     if (domain) seenByDomain.add(domain);
-    merged.push(row);
+    merged.push({
+      ...row,
+      name: candidateName
+    });
     if (merged.length >= maxResults) break;
   }
 
