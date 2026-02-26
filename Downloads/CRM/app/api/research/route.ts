@@ -22,6 +22,7 @@ type Payload = {
   extraInstructions?: string;
   externalOnly?: boolean;
   externalMode?: "similar" | "profile";
+  allowCrmFallback?: boolean;
 };
 
 type SegmentFocus = "B2B" | "B2C" | "MIXED";
@@ -613,7 +614,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as Payload;
     const settings = await getResearchConfig();
     const scope = body.scope === "country" ? "country" : body.scope === "region" ? "region" : settings.defaultScope;
-    const maxSimilar = Math.max(1, Math.min(20, body.maxSimilar ?? 10));
+    const maxSimilar = Math.max(1, Math.min(50, body.maxSimilar ?? 10));
 
     let baseCustomer = null as null | MinimalCustomer;
 
@@ -778,6 +779,16 @@ export async function POST(req: Request) {
       const registryHints = registryHintsForCountry(country);
       const sniGroups = likelySniGroupFromIndustry(industry);
       const taskBasePrompt = body.basePrompt?.trim() || settings.similarCustomersPrompt;
+      const similarResponseGuard =
+        [
+          "RESPONSE REQUIREMENTS (MANDATORY):",
+          "- Return valid JSON only.",
+          "- Include at least 25 candidates when possible (or as many verified candidates as found).",
+          "- Exclude directory/listing pages and profile databases.",
+          "- Prefer official company websites and real retailers/resellers only.",
+          "- For each candidate include: company, country, region, segment, fit_score, potential_score, total_score, confidence, website, reason."
+        ].join("\n");
+      const guardedSimilarPrompt = `${taskBasePrompt}\n\n${similarResponseGuard}`;
       const primaryTaskPrompt = buildTaskPrompt(taskBasePrompt, {
         reference_customer: {
           name: companyName,
@@ -815,7 +826,43 @@ export async function POST(req: Request) {
         },
         additional_instructions: mergedExtraInstructions || null
       });
-      let finalPrompt = composePrompt(settings.globalSystemPrompt, primaryTaskPrompt);
+      let finalPrompt = composePrompt(settings.globalSystemPrompt, buildTaskPrompt(guardedSimilarPrompt, {
+        reference_customer: {
+          name: companyName,
+          organization: baseCustomer?.organization ?? null,
+          country,
+          region,
+          industry,
+          segment_focus: segmentFocus,
+          website_data: websiteSnapshots
+        },
+        vendora: {
+          countries_served: settings.countries,
+          positioning: "Vendora Nordic channel distributor",
+          assortment_catalog: websites,
+          strategic_focus: settings.industries
+        },
+        discovery_inputs: {
+          candidate_pool_list: [],
+          web_discovery_allowed: true,
+          allowed_sources: registryHints
+        },
+        legal_filters: {
+          prefer_same_country: true,
+          disallow_directory_pages: true,
+          prefer_official_registry_sources: true,
+          sni_or_equivalent_groups: sniGroups
+        },
+        filters: {
+          scope,
+          countries: country ? [country, ...settings.countries.filter((c) => c !== country)] : settings.countries,
+          regions: region ? [region] : [],
+          segment_focus: segmentFocus,
+          max_results_per_group: maxSimilar,
+          exclude_distributors: true
+        },
+        additional_instructions: mergedExtraInstructions || null
+      }));
       let externalDiscovery: Awaited<ReturnType<typeof discoverExternalSeeds>> = {
         candidates: [],
         usedProviders: []
@@ -874,7 +921,7 @@ export async function POST(req: Request) {
       }
 
       if (similarCustomers.length === 0 && externalDiscovery.candidates.length > 0) {
-        const fallbackTaskPrompt = buildTaskPrompt(taskBasePrompt, {
+        const fallbackTaskPrompt = buildTaskPrompt(guardedSimilarPrompt, {
           reference_customer: {
             name: companyName,
             organization: baseCustomer?.organization ?? null,
@@ -936,7 +983,8 @@ export async function POST(req: Request) {
       // Do not show raw discovery rows directly as candidates.
       // Only show model-ranked company candidates or CRM fallback.
 
-      if (similarCustomers.length === 0) {
+      const allowCrmFallback = body.allowCrmFallback === true;
+      if (similarCustomers.length === 0 && allowCrmFallback) {
         similarCustomers = await crmFallbackSimilarCustomers(
           baseCustomer,
           companyName,

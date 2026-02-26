@@ -562,8 +562,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         body: JSON.stringify({
           customerId: params.id,
           scope,
-          maxSimilar: 8,
+          maxSimilar: 30,
           externalOnly: true,
+          allowCrmFallback: false,
           basePrompt:
             formConfig.similarCustomersPrompt ||
             DEFAULT_FORM_CONFIG.similarCustomersPrompt,
