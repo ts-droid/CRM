@@ -127,6 +127,29 @@ function registryHintsForCountry(country: string | null): string[] {
   return ["Official company register", "national business directory", "industry directories"];
 }
 
+function likelySniGroupFromIndustry(industry: string | null): string[] {
+  const value = String(industry ?? "").toLowerCase();
+  if (!value) return [];
+  if (value.includes("office") || value.includes("workplace")) return ["46.66", "47.59", "47.41"];
+  if (value.includes("consumer electronics") || value.includes("electronics")) return ["46.43", "47.43", "47.41"];
+  if (value.includes("it") || value.includes("reseller") || value.includes("e-commerce")) return ["46.51", "47.91", "62.09"];
+  return [];
+}
+
+function domainMatchesCountry(domain: string, country: string | null): boolean {
+  if (!domain) return false;
+  const normalized = (country ?? "").trim().toUpperCase();
+  if (!normalized) return true;
+  if (normalized === "SE") return domain.endsWith(".se") || domain === "allabolag.se" || domain === "proff.se";
+  if (normalized === "NO") return domain.endsWith(".no") || domain === "proff.no";
+  if (normalized === "DK") return domain.endsWith(".dk") || domain === "proff.dk" || domain === "virk.dk";
+  if (normalized === "FI") return domain.endsWith(".fi");
+  if (normalized === "EE") return domain.endsWith(".ee");
+  if (normalized === "LV") return domain.endsWith(".lv");
+  if (normalized === "LT") return domain.endsWith(".lt");
+  return true;
+}
+
 function normalizeCompanyName(value: string | null | undefined): string {
   return String(value ?? "")
     .toLowerCase()
@@ -215,7 +238,12 @@ function hardFilterCompanyCandidates(candidates: SimilarCandidate[]): SimilarCan
     "wikipedia.org",
     "linkedin.com",
     "clutch.co",
-    "sortlist.com"
+    "sortlist.com",
+    "rocketreach.co",
+    "rocketreach.com",
+    "signalhire.com",
+    "contactout.com",
+    "theorg.com"
   ]);
   const out: SimilarCandidate[] = [];
   const seenNames = new Set<string>();
@@ -238,6 +266,16 @@ function hardFilterCompanyCandidates(candidates: SimilarCandidate[]): SimilarCan
   }
 
   return out;
+}
+
+function enforceCountryAndRegistryQuality(candidates: SimilarCandidate[], country: string | null): SimilarCandidate[] {
+  return candidates.filter((candidate) => {
+    const domain = websiteDomain(candidate.website || candidate.sourceUrl || "");
+    if (!domain) return false;
+    if (!domainMatchesCountry(domain, country)) return false;
+    if (pathLooksLikeContentPage(candidate.website || candidate.sourceUrl || "")) return false;
+    return true;
+  });
 }
 
 async function validateCandidatesWithGemini(
@@ -738,6 +776,7 @@ export async function POST(req: Request) {
         .filter(Boolean)
         .join("\n\n");
       const registryHints = registryHintsForCountry(country);
+      const sniGroups = likelySniGroupFromIndustry(industry);
       const taskBasePrompt = body.basePrompt?.trim() || settings.similarCustomersPrompt;
       const primaryTaskPrompt = buildTaskPrompt(taskBasePrompt, {
         reference_customer: {
@@ -759,6 +798,12 @@ export async function POST(req: Request) {
           candidate_pool_list: [],
           web_discovery_allowed: true,
           allowed_sources: registryHints
+        },
+        legal_filters: {
+          prefer_same_country: true,
+          disallow_directory_pages: true,
+          prefer_official_registry_sources: true,
+          sni_or_equivalent_groups: sniGroups
         },
         filters: {
           scope,
@@ -798,6 +843,7 @@ export async function POST(req: Request) {
       }
 
       similarCustomers = hardFilterCompanyCandidates(similarCustomers);
+      similarCustomers = enforceCountryAndRegistryQuality(similarCustomers, country);
       similarCustomers = await validateCandidatesWithGemini(
         similarCustomers,
         { companyName, country, region, industry },
@@ -849,6 +895,12 @@ export async function POST(req: Request) {
             web_discovery_allowed: false,
             allowed_sources: registryHints
           },
+          legal_filters: {
+            prefer_same_country: true,
+            disallow_directory_pages: true,
+            prefer_official_registry_sources: true,
+            sni_or_equivalent_groups: sniGroups
+          },
           filters: {
             scope,
             countries: country ? [country] : settings.countries,
@@ -878,28 +930,11 @@ export async function POST(req: Request) {
         }
 
         similarCustomers = hardFilterCompanyCandidates(similarCustomers);
+        similarCustomers = enforceCountryAndRegistryQuality(similarCustomers, country);
       }
 
-      if (similarCustomers.length === 0 && externalDiscovery.candidates.length > 0) {
-        similarCustomers = hardFilterCompanyCandidates(
-          externalDiscovery.candidates.slice(0, maxSimilar).map((candidate, index) => ({
-            id: `external-seed-${index + 1}`,
-            name: candidate.name,
-            country: country ?? null,
-            region: region ?? null,
-            industry: industry ?? null,
-            seller: null,
-            potentialScore: 45,
-            matchScore: 45,
-            website: candidate.website,
-            organizationNumber: null,
-            reason: candidate.snippet || "External discovery seed",
-            sourceType: candidate.sourceType,
-            sourceUrl: candidate.sourceUrl,
-            confidence: "low"
-          }))
-        );
-      }
+      // Do not show raw discovery rows directly as candidates.
+      // Only show model-ranked company candidates or CRM fallback.
 
       if (similarCustomers.length === 0) {
         similarCustomers = await crmFallbackSimilarCustomers(
