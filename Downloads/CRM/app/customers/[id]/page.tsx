@@ -262,6 +262,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarStatus, setSimilarStatus] = useState("");
   const [similarResults, setSimilarResults] = useState<SimilarCustomer[]>([]);
+  const [similarAiOutput, setSimilarAiOutput] = useState("");
   const [similarScopeUsed, setSimilarScopeUsed] = useState<"region" | "country" | null>(null);
   const [selectedSimilar, setSelectedSimilar] = useState<SimilarCustomer | null>(null);
   const [selectedSimilarResearch, setSelectedSimilarResearch] = useState("");
@@ -456,6 +457,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const savedAtText = customer
     ? new Date(customer.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "--:--";
+  const similarAiSections = parseMarkdownSections(similarAiOutput);
   const similarResearchSections = parseMarkdownSections(selectedSimilarResearch);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
@@ -493,12 +495,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     setSelectedSimilar(null);
     setSelectedSimilarResearch("");
     setSelectedSimilarResearchError("");
+    setSimilarAiOutput("");
 
     const initialScope: "region" | "country" = customer?.region ? "region" : "country";
 
     const callResearch = async (scope: "region" | "country") => {
       const res = await fetch("/api/research", {
         method: "POST",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId: params.id,
@@ -523,16 +527,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       let rows = first.similarCustomers ?? [];
       let scopeUsed: "region" | "country" = initialScope;
       let aiError = first.aiError ?? null;
+      let aiOutput = first.aiResult?.outputText ?? "";
 
       if (rows.length === 0 && initialScope === "region" && customer?.country) {
         const fallback = await callResearch("country");
         rows = fallback.similarCustomers ?? [];
         scopeUsed = "country";
         aiError = fallback.aiError ?? aiError;
+        aiOutput = fallback.aiResult?.outputText ?? aiOutput;
       }
 
       setSimilarResults(rows);
       setSimilarScopeUsed(scopeUsed);
+      setSimilarAiOutput(aiOutput);
 
       const topMatches = rows.slice(0, 3).map((item) => item.name).join(", ");
       if (rows.length === 0 && aiError) {
@@ -902,6 +909,25 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 </div>
               ) : null}
               {similarStatus ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{similarStatus}</p> : null}
+              {similarAiOutput ? (
+                <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                  <article className="crm-item">
+                    <h4 style={{ margin: 0 }}>{lang === "sv" ? "AI-svar (chat)" : "AI output (chat)"}</h4>
+                    {similarAiSections.length > 0 ? (
+                      <div className="crm-list" style={{ marginTop: "0.55rem" }}>
+                        {similarAiSections.map((section) => (
+                          <article key={section.title} className="crm-item">
+                            <h4 style={{ margin: 0 }}>{section.title}</h4>
+                            <pre className="crm-pre" style={{ marginTop: "0.45rem" }}>{section.body}</pre>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{similarAiOutput}</pre>
+                    )}
+                  </article>
+                </div>
+              ) : null}
               {similarResults.length > 0 ? (
                 <div className="crm-list" style={{ marginTop: "0.7rem" }}>
                   {similarResults.map((row) => (
