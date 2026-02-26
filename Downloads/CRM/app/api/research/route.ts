@@ -43,6 +43,18 @@ type SimilarCandidate = {
   totalScore?: number | null;
   similarityScore?: number | null;
 };
+type MinimalCustomer = {
+  id: string;
+  name: string;
+  organization: string | null;
+  country: string | null;
+  region: string | null;
+  industry: string | null;
+  seller: string | null;
+  notes?: string | null;
+  potentialScore: number;
+  website?: string | null;
+};
 
 function inferSegmentFocus(text: string): SegmentFocus {
   const normalized = text.toLowerCase();
@@ -130,6 +142,215 @@ function websiteDomain(value: string | null | undefined): string {
   } catch {
     return "";
   }
+}
+
+function pathLooksLikeContentPage(value: string | null | undefined): boolean {
+  const raw = String(value ?? "").trim();
+  if (!raw) return false;
+  try {
+    const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    const path = `${url.pathname}${url.search}`.toLowerCase();
+    if (!path || path === "/" || path.length <= 1) return false;
+    const blockedParts = [
+      "/review/",
+      "/reviews/",
+      "/careers",
+      "/privacy",
+      "/terms",
+      "/blog/",
+      "/news/",
+      "/article/",
+      "/report-",
+      "/search/",
+      "/category/",
+      "/list/",
+      "/ranking/",
+      ".pdf",
+      ".doc",
+      ".ppt"
+    ];
+    if (path.split("/").filter(Boolean).length > 1) return true;
+    return blockedParts.some((part) => path.includes(part));
+  } catch {
+    return true;
+  }
+}
+
+function looksLikeCompanyName(value: string): boolean {
+  const name = String(value ?? "").trim();
+  if (!name || name.length < 3 || name.length > 120) return false;
+  const lowered = name.toLowerCase();
+  const blockedNamePatterns = [
+    /\btop\s+\d+/,
+    /\bbest\b/,
+    /\blargest\b/,
+    /\breport a concern\b/,
+    /\bprivacy policy\b/,
+    /\bcareers\b/,
+    /\bcontact us\b/,
+    /\babout us\b/,
+    /\breviews?\b/,
+    /\bcompanies\b/,
+    /\bsuppliers\b/,
+    /^\[pdf\]/i
+  ];
+  if (blockedNamePatterns.some((pattern) => pattern.test(lowered))) return false;
+  return true;
+}
+
+function hardFilterCompanyCandidates(candidates: SimilarCandidate[]): SimilarCandidate[] {
+  const blockedDomains = new Set([
+    "trustpilot.com",
+    "companydata.com",
+    "crunchbase.com",
+    "owler.com",
+    "zoominfo.com",
+    "apollo.io",
+    "yelp.com",
+    "glassdoor.com",
+    "f6s.com",
+    "lusha.com",
+    "ensun.io",
+    "kompass.com",
+    "wikipedia.org",
+    "linkedin.com",
+    "clutch.co",
+    "sortlist.com"
+  ]);
+  const out: SimilarCandidate[] = [];
+  const seenNames = new Set<string>();
+  const seenDomains = new Set<string>();
+
+  for (const candidate of candidates) {
+    if (!looksLikeCompanyName(candidate.name)) continue;
+    const domain = websiteDomain(candidate.website || candidate.sourceUrl || "");
+    if (domain) {
+      if (blockedDomains.has(domain)) continue;
+      if (Array.from(blockedDomains).some((blocked) => domain.endsWith(`.${blocked}`))) continue;
+      if (pathLooksLikeContentPage(candidate.website || candidate.sourceUrl || "")) continue;
+      if (seenDomains.has(domain)) continue;
+    }
+    const key = normalizeCompanyName(candidate.name);
+    if (!key || seenNames.has(key)) continue;
+    seenNames.add(key);
+    if (domain) seenDomains.add(domain);
+    out.push(candidate);
+  }
+
+  return out;
+}
+
+async function validateCandidatesWithGemini(
+  candidates: SimilarCandidate[],
+  context: { companyName: string; country: string | null; region: string | null; industry: string | null },
+  systemPrompt: string
+): Promise<SimilarCandidate[]> {
+  if (candidates.length === 0) return candidates;
+  const prompt = composePrompt(
+    systemPrompt,
+    [
+      "TASK: Validate candidate list and keep only likely real companies.",
+      "Return JSON only:",
+      "{ \"keep\": [ { \"name\": \"string\", \"reason\": \"string\", \"confidence\": \"high|medium|low\" } ] }",
+      "",
+      `Reference company: ${context.companyName}`,
+      `Country: ${context.country ?? "-"}`,
+      `Region: ${context.region ?? "-"}`,
+      `Industry: ${context.industry ?? "-"}`,
+      "",
+      "Reject non-company pages (reviews, lists, directories, policy/career pages, generic content).",
+      "Candidate pool:",
+      JSON.stringify(candidates, null, 2)
+    ].join("\n")
+  );
+
+  try {
+    const result = await generateWithGemini(prompt);
+    if (!result?.outputText) return candidates;
+    const parsed = extractJsonObject(result.outputText);
+    const keepRows = Array.isArray(parsed?.keep) ? parsed.keep : [];
+    if (keepRows.length === 0) return candidates;
+    const keepSet = new Set(
+      keepRows
+        .map((row) => (row && typeof row === "object" ? normalizeCompanyName(String((row as Record<string, unknown>).name ?? "")) : ""))
+        .filter(Boolean)
+    );
+    const filtered = candidates.filter((candidate) => keepSet.has(normalizeCompanyName(candidate.name)));
+    return filtered.length > 0 ? filtered : candidates;
+  } catch {
+    return candidates;
+  }
+}
+
+async function crmFallbackSimilarCustomers(
+  baseCustomer: MinimalCustomer | null,
+  companyName: string,
+  scope: "country" | "region",
+  country: string | null,
+  region: string | null,
+  industry: string | null,
+  seller: string | null,
+  potentialScore: number,
+  segmentFocus: SegmentFocus,
+  maxSimilar: number
+): Promise<SimilarCandidate[]> {
+  const pool = await prisma.customer.findMany({
+    where: {
+      ...(baseCustomer ? { id: { not: baseCustomer.id } } : {}),
+      ...(scope === "country" && country ? { country } : {}),
+      ...(scope === "region" && region ? { region } : {})
+    },
+    select: {
+      id: true,
+      name: true,
+      organization: true,
+      country: true,
+      region: true,
+      industry: true,
+      seller: true,
+      notes: true,
+      potentialScore: true,
+      website: true
+    },
+    take: 300
+  });
+
+  const segmentFiltered = pool.filter((candidate) => {
+    const candidateSegment = inferSegmentFocus(
+      [candidate.name, candidate.organization, candidate.industry, candidate.seller, candidate.notes].filter(Boolean).join(" ")
+    );
+    return segmentMatches(segmentFocus, candidateSegment);
+  });
+  const rankingPool = segmentFiltered.length >= 3 ? segmentFiltered : pool;
+
+  const ranked = rankSimilarCustomers(
+    {
+      id: baseCustomer?.id ?? "external-target",
+      name: companyName,
+      country,
+      region,
+      industry,
+      seller,
+      potentialScore
+    },
+    rankingPool
+  ).slice(0, maxSimilar);
+
+  return ranked.map((row) => ({
+    id: row.id,
+    name: row.name,
+    country: row.country,
+    region: row.region,
+    industry: row.industry,
+    seller: row.seller,
+    potentialScore: row.potentialScore,
+    matchScore: row.matchScore,
+    website: (rankingPool.find((item) => item.id === row.id)?.website as string | undefined) ?? null,
+    reason: "CRM fallback based on similar profile and segment.",
+    sourceType: "crm-fallback",
+    sourceUrl: null,
+    confidence: "medium"
+  }));
 }
 
 function extractCandidatesFromText(
@@ -304,18 +525,7 @@ export async function POST(req: Request) {
     const scope = body.scope === "country" ? "country" : body.scope === "region" ? "region" : settings.defaultScope;
     const maxSimilar = Math.max(1, Math.min(20, body.maxSimilar ?? 10));
 
-    let baseCustomer = null as null | {
-      id: string;
-      name: string;
-      organization: string | null;
-      country: string | null;
-      region: string | null;
-      industry: string | null;
-      seller: string | null;
-      website: string | null;
-      notes: string | null;
-      potentialScore: number;
-    };
+    let baseCustomer = null as null | MinimalCustomer;
 
     if (body.customerId) {
       baseCustomer = await prisma.customer.findUnique({
@@ -544,6 +754,13 @@ export async function POST(req: Request) {
         similarCustomers = extractSimilarCandidates(extractJsonValue(aiResult.outputText), maxSimilar);
       }
 
+      similarCustomers = hardFilterCompanyCandidates(similarCustomers);
+      similarCustomers = await validateCandidatesWithGemini(
+        similarCustomers,
+        { companyName, country, region, industry },
+        settings.globalSystemPrompt
+      );
+
       if (similarCustomers.length === 0 && externalDiscovery.candidates.length > 0) {
         similarCustomers = externalDiscovery.candidates.slice(0, maxSimilar).map((candidate, index) => ({
           id: `external-seed-${index + 1}`,
@@ -561,10 +778,27 @@ export async function POST(req: Request) {
           sourceUrl: candidate.sourceUrl,
           confidence: "low"
         }));
+        similarCustomers = hardFilterCompanyCandidates(similarCustomers);
       }
 
       if (similarCustomers.length === 0 && aiResult?.outputText) {
         similarCustomers = extractCandidatesFromText(aiResult.outputText, maxSimilar);
+        similarCustomers = hardFilterCompanyCandidates(similarCustomers);
+      }
+
+      if (similarCustomers.length === 0) {
+        similarCustomers = await crmFallbackSimilarCustomers(
+          baseCustomer,
+          companyName,
+          scope,
+          country,
+          region,
+          industry,
+          seller,
+          potentialScore,
+          segmentFocus,
+          maxSimilar
+        );
       }
 
       if (similarCustomers.length === 0 && !aiError) {
