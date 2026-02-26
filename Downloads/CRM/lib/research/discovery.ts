@@ -32,6 +32,47 @@ type TavilyResponse = {
   }>;
 };
 
+const BLOCKED_DOMAINS = new Set([
+  "yelp.com",
+  "glassdoor.com",
+  "bullfincher.io",
+  "f6s.com",
+  "lusha.com",
+  "ensun.io",
+  "kompass.com",
+  "wikipedia.org",
+  "linkedin.com"
+]);
+
+const GENERIC_TITLE_PATTERNS = [
+  /\btop\s+\d+/i,
+  /\bbest\b/i,
+  /\blargest\b/i,
+  /\branking\b/i,
+  /\bcompanies\b/i,
+  /\bsuppliers\b/i,
+  /\blist\b/i,
+  /\bmarket\b/i,
+  /\bby\s+revenue\b/i,
+  /\bnear\s+me\b/i
+];
+
+const COMPANY_SUFFIXES = [
+  "ab",
+  "as",
+  "a/s",
+  "oy",
+  "oyj",
+  "aps",
+  "oü",
+  "sia",
+  "uab",
+  "gmbh",
+  "ltd",
+  "inc",
+  "llc"
+];
+
 function normalizeCompanyName(value: string): string {
   return value
     .toLowerCase()
@@ -63,11 +104,45 @@ function guessNameFromTitleOrUrl(title: string, url: string): string {
   return head ? head.replace(/[-_]+/g, " ").trim() : "";
 }
 
-function buildDiscoveryQuery(input: DiscoveryInput): string {
+function hasCompanySuffix(name: string): boolean {
+  const lower = name.toLowerCase().replace(/\./g, "").trim();
+  return COMPANY_SUFFIXES.some((suffix) => new RegExp(`\\b${suffix}\\b`, "i").test(lower));
+}
+
+function isLikelyGenericTitle(name: string): boolean {
+  const normalized = String(name).trim();
+  if (!normalized) return true;
+  if (normalized.length > 90) return true;
+  return GENERIC_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isBlockedDomain(domain: string): boolean {
+  if (!domain) return true;
+  for (const blocked of BLOCKED_DOMAINS) {
+    if (domain === blocked || domain.endsWith(`.${blocked}`)) return true;
+  }
+  return false;
+}
+
+function looksLikeCompany(seed: DiscoverySeed): boolean {
+  const domain = toDomain(seed.website || seed.sourceUrl);
+  if (isBlockedDomain(domain)) return false;
+
+  const titleLooksGeneric = isLikelyGenericTitle(seed.name);
+  if (!titleLooksGeneric && seed.name.length >= 3) return true;
+
+  const domainHead = domain.split(".")[0] || "";
+  if (!domainHead) return false;
+  const domainName = domainHead.replace(/[-_]+/g, " ").trim();
+  if (domainName.length < 3) return false;
+
+  return hasCompanySuffix(domainName) || !isLikelyGenericTitle(domainName);
+}
+
+function buildDiscoveryQueries(input: DiscoveryInput): string[] {
   const parts = [
-    `companies similar to ${input.companyName}`,
+    `"${input.companyName}"`,
     "reseller",
-    "retail",
     input.industry || "",
     input.segmentFocus === "B2B" ? "B2B" : input.segmentFocus === "B2C" ? "B2C" : "",
     input.region || "",
@@ -75,7 +150,15 @@ function buildDiscoveryQuery(input: DiscoveryInput): string {
   ]
     .map((item) => String(item).trim())
     .filter(Boolean);
-  return parts.join(" ");
+  const base = parts.join(" ");
+
+  const companySuffixHint = (input.country || "").toUpperCase() === "SE" ? "AB" : "company";
+
+  return [
+    `${base} competitors`,
+    `${base} similar companies`,
+    `${input.industry || "retail"} ${input.region || ""} ${input.country || ""} ${companySuffixHint}`.trim()
+  ];
 }
 
 async function fetchSerperSeeds(query: string, maxResults: number): Promise<DiscoverySeed[]> {
@@ -160,23 +243,26 @@ export async function discoverExternalSeeds(input: DiscoveryInput): Promise<{
   usedProviders: string[];
 }> {
   const maxResults = Math.min(20, Math.max(6, input.maxResults ?? 12));
-  const query = buildDiscoveryQuery(input);
+  const queries = buildDiscoveryQueries(input).slice(0, 3);
 
-  const [serper, tavily] = await Promise.all([
-    fetchSerperSeeds(query, maxResults),
-    fetchTavilySeeds(query, maxResults)
-  ]);
+  const serperAll = (
+    await Promise.all(queries.map((query) => fetchSerperSeeds(query, Math.max(8, maxResults))))
+  ).flat();
+  const tavilyAll = (
+    await Promise.all(queries.map((query) => fetchTavilySeeds(query, Math.max(8, maxResults))))
+  ).flat();
 
   const usedProviders: string[] = [];
-  if (serper.length > 0) usedProviders.push("serper");
-  if (tavily.length > 0) usedProviders.push("tavily");
+  if (serperAll.length > 0) usedProviders.push("serper");
+  if (tavilyAll.length > 0) usedProviders.push("tavily");
 
   const excludeDomain = toDomain(input.excludeDomain ?? "");
   const seenByName = new Set<string>();
   const seenByDomain = new Set<string>();
   const merged: DiscoverySeed[] = [];
 
-  for (const row of [...serper, ...tavily]) {
+  for (const row of [...serperAll, ...tavilyAll]) {
+    if (!looksLikeCompany(row)) continue;
     const normalizedName = normalizeCompanyName(row.name);
     const domain = toDomain(row.website || row.sourceUrl);
     if (!normalizedName || seenByName.has(normalizedName)) continue;
