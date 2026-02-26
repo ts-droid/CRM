@@ -512,22 +512,32 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       const first = await callResearch(initialScope);
       let rows = first.similarCustomers ?? [];
       let scopeUsed: "region" | "country" = initialScope;
+      let aiError = first.aiError ?? null;
 
       if (rows.length === 0 && initialScope === "region" && customer?.country) {
         const fallback = await callResearch("country");
         rows = fallback.similarCustomers ?? [];
         scopeUsed = "country";
+        aiError = fallback.aiError ?? aiError;
       }
 
       setSimilarResults(rows);
       setSimilarScopeUsed(scopeUsed);
 
       const topMatches = rows.slice(0, 3).map((item) => item.name).join(", ");
-      setSimilarStatus(
-        lang === "sv"
-          ? `Hittade ${rows.length} liknande kunder (${scopeUsed === "region" ? "region" : "land"}). ${topMatches || ""}`.trim()
-          : `Found ${rows.length} similar customers (${scopeUsed}). ${topMatches || ""}`.trim()
-      );
+      if (rows.length === 0 && aiError) {
+        setSimilarStatus(
+          lang === "sv"
+            ? `AI returnerade inga kandidater (${scopeUsed === "region" ? "region" : "land"}). Fel: ${aiError}`
+            : `AI returned no candidates (${scopeUsed}). Error: ${aiError}`
+        );
+      } else {
+        setSimilarStatus(
+          lang === "sv"
+            ? `Hittade ${rows.length} liknande kunder (${scopeUsed === "region" ? "region" : "land"}). ${topMatches || ""}`.trim()
+            : `Found ${rows.length} similar customers (${scopeUsed}). ${topMatches || ""}`.trim()
+        );
+      }
     } catch (error) {
       setSimilarResults([]);
       setSimilarScopeUsed(null);

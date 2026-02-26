@@ -112,6 +112,79 @@ function websiteDomain(value: string | null | undefined): string {
   }
 }
 
+function extractCandidatesFromText(
+  text: string,
+  maxSimilar: number
+): Array<{
+  id: string;
+  name: string;
+  country: string | null;
+  region: string | null;
+  industry: string | null;
+  seller: string | null;
+  potentialScore: number;
+  matchScore: number;
+  website?: string | null;
+  organizationNumber?: string | null;
+  reason?: string | null;
+  sourceType?: string | null;
+  sourceUrl?: string | null;
+  confidence?: string | null;
+}> {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line));
+
+  const seen = new Set<string>();
+  const out: Array<{
+    id: string;
+    name: string;
+    country: string | null;
+    region: string | null;
+    industry: string | null;
+    seller: string | null;
+    potentialScore: number;
+    matchScore: number;
+    website?: string | null;
+    organizationNumber?: string | null;
+    reason?: string | null;
+    sourceType?: string | null;
+    sourceUrl?: string | null;
+    confidence?: string | null;
+  }> = [];
+
+  for (const raw of lines) {
+    const cleaned = raw
+      .replace(/^[-*]\s+/, "")
+      .replace(/^\d+\.\s+/, "")
+      .replace(/\s+\(already customer\)$/i, "")
+      .trim();
+    const name = cleaned.split(/[|–—-]/)[0]?.trim() ?? "";
+    if (!name || name.length < 3) continue;
+    const key = normalizeCompanyName(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      id: `external-text-${out.length + 1}`,
+      name,
+      country: null,
+      region: null,
+      industry: null,
+      seller: null,
+      potentialScore: 50,
+      matchScore: 50,
+      reason: "Extracted from non-JSON AI output",
+      sourceType: "estimated",
+      sourceUrl: null,
+      confidence: "low"
+    });
+    if (out.length >= maxSimilar) break;
+  }
+
+  return out;
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Payload;
@@ -338,6 +411,89 @@ export async function POST(req: Request) {
           })
           .filter((item) => item.name)
           .slice(0, maxSimilar);
+      }
+
+      if (similarCustomers.length === 0 && aiResult?.outputText) {
+        similarCustomers = extractCandidatesFromText(aiResult.outputText, maxSimilar);
+      }
+
+      if (similarCustomers.length === 0 && !aiError) {
+        const retryPrompt = [
+          body.basePrompt?.trim() || settings.quickSimilarBasePrompt,
+          "",
+          "Retry mode:",
+          `Return EXACT JSON with at least ${Math.min(5, maxSimilar)} candidates.`,
+          "You may estimate unknown fields as null. Keep only realistic reseller companies.",
+          "",
+          "JSON schema:",
+          "{",
+          '  "candidates": [',
+          "    {",
+          '      "name": "string",',
+          '      "country": "string|null",',
+          '      "region": "string|null",',
+          '      "industry": "string|null",',
+          '      "website": "string|null",',
+          '      "organizationNumber": "string|null",',
+          '      "matchScore": 0,',
+          '      "potentialScore": 0,',
+          '      "reason": "string",',
+          '      "sourceType": "register|directory|estimated",',
+          '      "sourceUrl": "string|null",',
+          '      "confidence": "high|medium|low"',
+          "    }",
+          "  ]",
+          "}"
+        ].join("\n");
+
+        try {
+          const retryResult = await generateWithGemini(retryPrompt);
+          if (retryResult?.outputText) {
+            const parsedAny = extractJsonValue(retryResult.outputText);
+            const parsedObj =
+              parsedAny && typeof parsedAny === "object" && !Array.isArray(parsedAny)
+                ? (parsedAny as Record<string, unknown>)
+                : null;
+            const rows = Array.isArray(parsedAny)
+              ? parsedAny
+              : Array.isArray(parsedObj?.candidates)
+              ? parsedObj.candidates
+              : [];
+            similarCustomers = rows
+              .map((row, index) => {
+                const item = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+                const parsedPotential = Number(item.potentialScore ?? item.potential ?? 50);
+                const parsedMatch = Number(item.matchScore ?? item.match ?? item.score ?? 50);
+                return {
+                  id: `external-retry-${index + 1}`,
+                  name: String(item.name ?? "").trim(),
+                  country: item.country ? String(item.country) : null,
+                  region: item.region ? String(item.region) : null,
+                  industry: item.industry ? String(item.industry) : null,
+                  seller: null,
+                  potentialScore: Number.isFinite(parsedPotential) ? parsedPotential : 50,
+                  matchScore: Number.isFinite(parsedMatch) ? parsedMatch : 50,
+                  website: item.website ? String(item.website) : item.url ? String(item.url) : null,
+                  organizationNumber:
+                    item.organizationNumber
+                      ? String(item.organizationNumber)
+                      : item.orgNumber
+                      ? String(item.orgNumber)
+                      : item.org_no
+                      ? String(item.org_no)
+                      : null,
+                  reason: item.reason ? String(item.reason) : "Retry extraction",
+                  sourceType: item.sourceType ? String(item.sourceType) : "estimated",
+                  sourceUrl: item.sourceUrl ? String(item.sourceUrl) : null,
+                  confidence: item.confidence ? String(item.confidence) : "low"
+                };
+              })
+              .filter((item) => item.name)
+              .slice(0, maxSimilar);
+          }
+        } catch {
+          // keep previous result and surface status via aiError path above if present
+        }
       }
 
       if (similarCustomers.length > 0) {
