@@ -5,6 +5,7 @@ import { rankSimilarCustomers } from "@/lib/research/similarity";
 import { fetchWebsiteSnapshot, normalizeUrl } from "@/lib/research/web";
 import { generateWithGemini } from "@/lib/research/llm";
 import { getResearchConfig } from "@/lib/admin/settings";
+import { discoverExternalSeeds } from "@/lib/research/discovery";
 
 type Payload = {
   customerId?: string;
@@ -470,6 +471,16 @@ export async function POST(req: Request) {
         });
       }
 
+      const externalDiscovery = await discoverExternalSeeds({
+        companyName,
+        country,
+        region,
+        industry,
+        segmentFocus,
+        maxResults: Math.max(10, maxSimilar * 2),
+        excludeDomain: baseCustomer?.website ?? null
+      });
+
       const mergedExtraInstructions = [settings.quickSimilarExtraInstructions, settings.extraInstructions, body.extraInstructions]
         .map((value) => String(value ?? "").trim())
         .filter(Boolean)
@@ -493,8 +504,8 @@ export async function POST(req: Request) {
           strategic_focus: settings.industries
         },
         discovery_inputs: {
-          candidate_pool_list: [],
-          web_discovery_allowed: true,
+          candidate_pool_list: externalDiscovery.candidates,
+          web_discovery_allowed: externalDiscovery.candidates.length === 0,
           allowed_sources: registryHints
         },
         filters: {
@@ -524,6 +535,25 @@ export async function POST(req: Request) {
         similarCustomers = extractSimilarCandidates(extractJsonValue(aiResult.outputText), maxSimilar);
       }
 
+      if (similarCustomers.length === 0 && externalDiscovery.candidates.length > 0) {
+        similarCustomers = externalDiscovery.candidates.slice(0, maxSimilar).map((candidate, index) => ({
+          id: `external-seed-${index + 1}`,
+          name: candidate.name,
+          country: country ?? null,
+          region: region ?? null,
+          industry: industry ?? null,
+          seller: null,
+          potentialScore: 45,
+          matchScore: 45,
+          website: candidate.website,
+          organizationNumber: null,
+          reason: candidate.snippet || "External discovery seed",
+          sourceType: candidate.sourceType,
+          sourceUrl: candidate.sourceUrl,
+          confidence: "low"
+        }));
+      }
+
       if (similarCustomers.length === 0 && aiResult?.outputText) {
         similarCustomers = extractCandidatesFromText(aiResult.outputText, maxSimilar);
       }
@@ -541,7 +571,8 @@ export async function POST(req: Request) {
             segment_focus: segmentFocus
           },
           discovery_inputs: {
-            web_discovery_allowed: true,
+            candidate_pool_list: externalDiscovery.candidates,
+            web_discovery_allowed: externalDiscovery.candidates.length === 0,
             allowed_sources: registryHints
           },
           filters: {
@@ -618,7 +649,12 @@ export async function POST(req: Request) {
         similarCustomers,
         aiPrompt: finalPrompt,
         aiResult,
-        aiError
+        aiError,
+        discovery: {
+          providerCount: externalDiscovery.usedProviders.length,
+          providers: externalDiscovery.usedProviders,
+          seedCount: externalDiscovery.candidates.length
+        }
       });
     }
 
