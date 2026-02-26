@@ -20,6 +20,7 @@ type Payload = {
   basePrompt?: string;
   extraInstructions?: string;
   externalOnly?: boolean;
+  externalMode?: "similar" | "profile";
 };
 
 type SegmentFocus = "B2B" | "B2C" | "MIXED";
@@ -185,6 +186,14 @@ function extractCandidatesFromText(
   return out;
 }
 
+function composePrompt(systemPrompt: string, taskPrompt: string): string {
+  const system = String(systemPrompt ?? "").trim();
+  const task = String(taskPrompt ?? "").trim();
+  if (!system) return task;
+  if (!task) return system;
+  return `${system}\n\n${task}`;
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Payload;
@@ -300,9 +309,68 @@ export async function POST(req: Request) {
     }> = [];
 
     if (body.externalOnly) {
+      if (body.externalMode === "profile") {
+        const deepPrompt = [
+          body.basePrompt?.trim() || settings.followupCustomerClickPrompt,
+          "",
+          "Target account context:",
+          `- Name: ${companyName}`,
+          `- Organization / org no hint: ${baseCustomer?.organization ?? "-"}`,
+          `- Country: ${country ?? "-"}`,
+          `- Region: ${region ?? "-"}`,
+          `- Industry: ${industry ?? "-"}`,
+          `- Segment focus: ${segmentFocus}`,
+          "",
+          "Output:",
+          "- FitScore, PotentialScore, TotalScore",
+          "- Year-1 potential range (Low/Base/High)",
+          "- Best categories/brands to pitch first",
+          "- Contact entry paths",
+          "- Outreach angle and concrete next step"
+        ].join("\n");
+
+        const mergedExtraInstructions = [settings.extraInstructions, body.extraInstructions]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean)
+          .join("\n\n");
+
+        const taskPrompt = mergedExtraInstructions
+          ? `${deepPrompt}\n\nAdditional internal instructions:\n${mergedExtraInstructions}`
+          : deepPrompt;
+        const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
+
+        let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
+        let aiError: string | null = null;
+        try {
+          aiResult = await generateWithGemini(finalPrompt);
+        } catch (error) {
+          aiError = error instanceof Error ? error.message : "Gemini request failed";
+        }
+
+        return NextResponse.json({
+          query: {
+            customerId: baseCustomer?.id ?? null,
+            companyName,
+            scope,
+            country,
+            region,
+            seller,
+            industry,
+            segmentFocus,
+            externalOnly: true,
+            externalMode: "profile"
+          },
+          websiteSnapshots,
+          similarCustomers: [],
+          aiPrompt: finalPrompt,
+          aiResult,
+          aiError
+        });
+      }
+
       const registryHints = registryHintsForCountry(country);
       const externalPrompt = [
-        body.basePrompt?.trim() || settings.quickSimilarBasePrompt,
+        body.basePrompt?.trim() || settings.similarCustomersPrompt,
         "",
         "Task:",
         `Find ${maxSimilar} similar reseller companies for this target using external/public information only.`,
@@ -352,9 +420,10 @@ export async function POST(req: Request) {
         .filter(Boolean)
         .join("\n\n");
 
-      const finalPrompt = mergedExtraInstructions
+      const taskPrompt = mergedExtraInstructions
         ? `${externalPrompt}\n\nAdditional internal instructions:\n${mergedExtraInstructions}`
         : externalPrompt;
+      const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
 
       let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
       let aiError: string | null = null;
@@ -419,7 +488,7 @@ export async function POST(req: Request) {
 
       if (similarCustomers.length === 0 && !aiError) {
         const retryPrompt = [
-          body.basePrompt?.trim() || settings.quickSimilarBasePrompt,
+          body.basePrompt?.trim() || settings.similarCustomersPrompt,
           "",
           "Retry mode:",
           `Return EXACT JSON with at least ${Math.min(5, maxSimilar)} candidates.`,
@@ -447,7 +516,7 @@ export async function POST(req: Request) {
         ].join("\n");
 
         try {
-          const retryResult = await generateWithGemini(retryPrompt);
+          const retryResult = await generateWithGemini(composePrompt(settings.globalSystemPrompt, retryPrompt));
           if (retryResult?.outputText) {
             const parsedAny = extractJsonValue(retryResult.outputText);
             const parsedObj =
@@ -601,7 +670,7 @@ export async function POST(req: Request) {
       seller,
       basePotential: potentialScore,
       segmentFocus,
-      basePrompt: body.basePrompt?.trim() || settings.researchBasePrompt,
+      basePrompt: body.basePrompt?.trim() || settings.fullResearchPrompt,
       websiteSnapshots,
       similarCustomers
     });
@@ -611,9 +680,10 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join("\n\n");
 
-    const finalPrompt = mergedExtraInstructions
+    const taskPrompt = mergedExtraInstructions
       ? `${aiPrompt}\n\nAdditional internal instructions:\n${mergedExtraInstructions}`
       : aiPrompt;
+    const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
 
     let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
     let aiError: string | null = null;

@@ -78,11 +78,11 @@ type FormConfig = {
   countries: string[];
   regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
-  researchBasePrompt: string;
+  globalSystemPrompt: string;
+  fullResearchPrompt: string;
+  similarCustomersPrompt: string;
+  followupCustomerClickPrompt: string;
   extraInstructions: string;
-  quickSimilarBasePrompt: string;
-  quickSimilarQuestionPrompt: string;
-  quickSimilarFollowupPrompt: string;
   quickSimilarExtraInstructions: string;
 };
 
@@ -126,15 +126,15 @@ const DEFAULT_FORM_CONFIG: FormConfig = {
   ],
   sellers: ["Team Nordics"]
   ,
-  researchBasePrompt:
+  globalSystemPrompt:
+    "You are an account intelligence and channel sales analyst for Vendora Nordic.",
+  fullResearchPrompt:
     "You are a senior GTM & Channel Analyst for Vendora Nordic.",
-  extraInstructions: "",
-  quickSimilarBasePrompt:
-    "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
-  quickSimilarQuestionPrompt:
+  similarCustomersPrompt:
     "Find up to 8 similar reseller customers based on this selected account. Use country/region scope first and fall back to country when needed. Prefer public company registers/directories and include confidence + source signals.",
-  quickSimilarFollowupPrompt:
+  followupCustomerClickPrompt:
     "Deep-research this selected similar company for Vendora fit and commercial potential. Quantify likely Year-1 potential range, highlight top product families to pitch, and provide concrete next steps.",
+  extraInstructions: "",
   quickSimilarExtraInstructions:
     "Keep the response short. Focus on similar profile in segment, geography and category focus."
 };
@@ -319,29 +319,40 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               ? data.config.regionsByCountry
               : DEFAULT_FORM_CONFIG.regionsByCountry,
             sellers: Array.isArray(data.config.sellers) ? data.config.sellers : DEFAULT_FORM_CONFIG.sellers,
-            researchBasePrompt:
-              typeof (data.config as { researchBasePrompt?: string }).researchBasePrompt === "string" &&
-              (data.config as { researchBasePrompt?: string }).researchBasePrompt?.trim()
+            globalSystemPrompt:
+              typeof (data.config as { globalSystemPrompt?: string }).globalSystemPrompt === "string"
+                ? String((data.config as { globalSystemPrompt?: string }).globalSystemPrompt)
+                : DEFAULT_FORM_CONFIG.globalSystemPrompt,
+            fullResearchPrompt:
+              typeof (data.config as { fullResearchPrompt?: string; researchBasePrompt?: string }).fullResearchPrompt === "string" &&
+              (data.config as { fullResearchPrompt?: string }).fullResearchPrompt?.trim()
+                ? String((data.config as { fullResearchPrompt?: string }).fullResearchPrompt)
+                : typeof (data.config as { researchBasePrompt?: string }).researchBasePrompt === "string" &&
+                  (data.config as { researchBasePrompt?: string }).researchBasePrompt?.trim()
                 ? String((data.config as { researchBasePrompt?: string }).researchBasePrompt)
-                : DEFAULT_FORM_CONFIG.researchBasePrompt,
+                : DEFAULT_FORM_CONFIG.fullResearchPrompt,
+            similarCustomersPrompt:
+              typeof (data.config as { similarCustomersPrompt?: string; quickSimilarQuestionPrompt?: string }).similarCustomersPrompt === "string" &&
+              (data.config as { similarCustomersPrompt?: string }).similarCustomersPrompt?.trim()
+                ? String((data.config as { similarCustomersPrompt?: string }).similarCustomersPrompt)
+                : typeof (data.config as { quickSimilarQuestionPrompt?: string }).quickSimilarQuestionPrompt === "string" &&
+                  (data.config as { quickSimilarQuestionPrompt?: string }).quickSimilarQuestionPrompt?.trim()
+                ? String((data.config as { quickSimilarQuestionPrompt?: string }).quickSimilarQuestionPrompt)
+                : DEFAULT_FORM_CONFIG.similarCustomersPrompt,
+            followupCustomerClickPrompt:
+              typeof (
+                data.config as { followupCustomerClickPrompt?: string; quickSimilarFollowupPrompt?: string }
+              ).followupCustomerClickPrompt === "string" &&
+              (data.config as { followupCustomerClickPrompt?: string }).followupCustomerClickPrompt?.trim()
+                ? String((data.config as { followupCustomerClickPrompt?: string }).followupCustomerClickPrompt)
+                : typeof (data.config as { quickSimilarFollowupPrompt?: string }).quickSimilarFollowupPrompt === "string" &&
+                  (data.config as { quickSimilarFollowupPrompt?: string }).quickSimilarFollowupPrompt?.trim()
+                ? String((data.config as { quickSimilarFollowupPrompt?: string }).quickSimilarFollowupPrompt)
+                : DEFAULT_FORM_CONFIG.followupCustomerClickPrompt,
             extraInstructions:
               typeof (data.config as { extraInstructions?: string }).extraInstructions === "string"
                 ? String((data.config as { extraInstructions?: string }).extraInstructions)
                 : DEFAULT_FORM_CONFIG.extraInstructions,
-            quickSimilarBasePrompt:
-              typeof data.config.quickSimilarBasePrompt === "string" && data.config.quickSimilarBasePrompt.trim()
-                ? data.config.quickSimilarBasePrompt
-                : DEFAULT_FORM_CONFIG.quickSimilarBasePrompt,
-            quickSimilarQuestionPrompt:
-              typeof (data.config as { quickSimilarQuestionPrompt?: string }).quickSimilarQuestionPrompt === "string" &&
-              (data.config as { quickSimilarQuestionPrompt?: string }).quickSimilarQuestionPrompt?.trim()
-                ? String((data.config as { quickSimilarQuestionPrompt?: string }).quickSimilarQuestionPrompt)
-                : DEFAULT_FORM_CONFIG.quickSimilarQuestionPrompt,
-            quickSimilarFollowupPrompt:
-              typeof (data.config as { quickSimilarFollowupPrompt?: string }).quickSimilarFollowupPrompt === "string" &&
-              (data.config as { quickSimilarFollowupPrompt?: string }).quickSimilarFollowupPrompt?.trim()
-                ? String((data.config as { quickSimilarFollowupPrompt?: string }).quickSimilarFollowupPrompt)
-                : DEFAULT_FORM_CONFIG.quickSimilarFollowupPrompt,
             quickSimilarExtraInstructions:
               typeof data.config.quickSimilarExtraInstructions === "string"
                 ? data.config.quickSimilarExtraInstructions
@@ -495,9 +506,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           maxSimilar: 8,
           externalOnly: true,
           basePrompt:
-            formConfig.quickSimilarQuestionPrompt ||
-            formConfig.quickSimilarBasePrompt ||
-            DEFAULT_FORM_CONFIG.quickSimilarQuestionPrompt,
+            formConfig.similarCustomersPrompt ||
+            DEFAULT_FORM_CONFIG.similarCustomersPrompt,
           extraInstructions: formConfig.quickSimilarExtraInstructions || DEFAULT_FORM_CONFIG.quickSimilarExtraInstructions
         })
       });
@@ -566,12 +576,13 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           industry: candidate.industry ?? undefined,
           websites: candidate.website ? [candidate.website] : [],
           externalOnly: true,
+          externalMode: "profile",
           scope: "country",
           maxSimilar: 10,
           basePrompt:
-            formConfig.quickSimilarFollowupPrompt ||
-            formConfig.researchBasePrompt ||
-            DEFAULT_FORM_CONFIG.quickSimilarFollowupPrompt,
+            formConfig.followupCustomerClickPrompt ||
+            formConfig.fullResearchPrompt ||
+            DEFAULT_FORM_CONFIG.followupCustomerClickPrompt,
           extraInstructions: formConfig.extraInstructions || DEFAULT_FORM_CONFIG.extraInstructions
         })
       });

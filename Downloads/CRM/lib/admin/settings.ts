@@ -15,10 +15,10 @@ export type SellerAssignments = Array<{
 export type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
-  researchBasePrompt: string;
-  quickSimilarBasePrompt: string;
-  quickSimilarQuestionPrompt: string;
-  quickSimilarFollowupPrompt: string;
+  globalSystemPrompt: string;
+  fullResearchPrompt: string;
+  similarCustomersPrompt: string;
+  followupCustomerClickPrompt: string;
   quickSimilarExtraInstructions: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
@@ -42,7 +42,13 @@ export type ResearchConfig = {
 export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://www.vendora.se"],
   brandWebsites: [],
-  researchBasePrompt:
+  globalSystemPrompt:
+    "You are an account intelligence and channel sales analyst for Vendora Nordic.\n" +
+    "Output in English only. Be concise, practical, and evidence-based.\n" +
+    "Never invent facts. Unknown data must be labeled Estimated + confidence + signals.\n" +
+    "Use FitScore, PotentialScore, TotalScore (0.55*Fit + 0.45*Potential).\n" +
+    "Only include commercially useful recommendations and clear next actions.",
+  fullResearchPrompt:
     "You are a senior GTM & Channel Analyst for Vendora Nordic.\n\n" +
     "Your task is to evaluate one selected reseller account and produce a practical expansion plan:\n" +
     "1) Score assortment fit (FitScore 0-100).\n" +
@@ -55,11 +61,9 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
     "- Mark unknowns as Estimated + confidence.\n" +
     "- If key data is missing, stay conservative.\n" +
     "- Keep output CRM-ready and actionable.",
-  quickSimilarBasePrompt:
-    "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
-  quickSimilarQuestionPrompt:
+  similarCustomersPrompt:
     "Find up to 8 similar reseller customers based on this selected account. Use country/region scope first and fall back to country when needed. Prefer public company registers/directories and include confidence + source signals.",
-  quickSimilarFollowupPrompt:
+  followupCustomerClickPrompt:
     "Deep-research this selected similar company for Vendora fit and commercial potential. Quantify likely Year-1 potential range, highlight top product families to pitch, and provide concrete next steps.",
   quickSimilarExtraInstructions:
     "Keep the response short. Focus on similar profile in segment, geography and category focus.",
@@ -214,10 +218,14 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
   return {
     vendorWebsites: uniqueTrimmed(value.vendorWebsites, 30),
     brandWebsites: uniqueTrimmed(value.brandWebsites, 60),
-    researchBasePrompt: String(value.researchBasePrompt ?? "").trim(),
-    quickSimilarBasePrompt: String(value.quickSimilarBasePrompt ?? "").trim(),
-    quickSimilarQuestionPrompt: String(value.quickSimilarQuestionPrompt ?? "").trim(),
-    quickSimilarFollowupPrompt: String(value.quickSimilarFollowupPrompt ?? "").trim(),
+    globalSystemPrompt: String(value.globalSystemPrompt ?? "").trim(),
+    fullResearchPrompt: String(value.fullResearchPrompt ?? value.researchBasePrompt ?? "").trim(),
+    similarCustomersPrompt: String(
+      value.similarCustomersPrompt ?? value.quickSimilarQuestionPrompt ?? value.quickSimilarBasePrompt ?? ""
+    ).trim(),
+    followupCustomerClickPrompt: String(
+      value.followupCustomerClickPrompt ?? value.quickSimilarFollowupPrompt ?? ""
+    ).trim(),
     quickSimilarExtraInstructions: String(value.quickSimilarExtraInstructions ?? "").trim(),
     extraInstructions: String(value.extraInstructions ?? "").trim(),
     defaultScope,
@@ -252,10 +260,11 @@ export async function getResearchConfig(): Promise<ResearchConfig> {
       ...DEFAULT_RESEARCH_CONFIG,
       ...normalized,
       vendorWebsites: normalized.vendorWebsites.length ? normalized.vendorWebsites : DEFAULT_RESEARCH_CONFIG.vendorWebsites,
-      researchBasePrompt: normalized.researchBasePrompt || DEFAULT_RESEARCH_CONFIG.researchBasePrompt,
-      quickSimilarBasePrompt: normalized.quickSimilarBasePrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarBasePrompt,
-      quickSimilarQuestionPrompt: normalized.quickSimilarQuestionPrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarQuestionPrompt,
-      quickSimilarFollowupPrompt: normalized.quickSimilarFollowupPrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarFollowupPrompt,
+      globalSystemPrompt: normalized.globalSystemPrompt || DEFAULT_RESEARCH_CONFIG.globalSystemPrompt,
+      fullResearchPrompt: normalized.fullResearchPrompt || DEFAULT_RESEARCH_CONFIG.fullResearchPrompt,
+      similarCustomersPrompt: normalized.similarCustomersPrompt || DEFAULT_RESEARCH_CONFIG.similarCustomersPrompt,
+      followupCustomerClickPrompt:
+        normalized.followupCustomerClickPrompt || DEFAULT_RESEARCH_CONFIG.followupCustomerClickPrompt,
       quickSimilarExtraInstructions:
         normalized.quickSimilarExtraInstructions || DEFAULT_RESEARCH_CONFIG.quickSimilarExtraInstructions,
       industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
@@ -274,10 +283,11 @@ export async function saveResearchConfig(input: unknown): Promise<ResearchConfig
     ...DEFAULT_RESEARCH_CONFIG,
     ...normalized,
     vendorWebsites: normalized.vendorWebsites.length ? normalized.vendorWebsites : DEFAULT_RESEARCH_CONFIG.vendorWebsites,
-    researchBasePrompt: normalized.researchBasePrompt || DEFAULT_RESEARCH_CONFIG.researchBasePrompt,
-    quickSimilarBasePrompt: normalized.quickSimilarBasePrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarBasePrompt,
-    quickSimilarQuestionPrompt: normalized.quickSimilarQuestionPrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarQuestionPrompt,
-    quickSimilarFollowupPrompt: normalized.quickSimilarFollowupPrompt || DEFAULT_RESEARCH_CONFIG.quickSimilarFollowupPrompt,
+    globalSystemPrompt: normalized.globalSystemPrompt || DEFAULT_RESEARCH_CONFIG.globalSystemPrompt,
+    fullResearchPrompt: normalized.fullResearchPrompt || DEFAULT_RESEARCH_CONFIG.fullResearchPrompt,
+    similarCustomersPrompt: normalized.similarCustomersPrompt || DEFAULT_RESEARCH_CONFIG.similarCustomersPrompt,
+    followupCustomerClickPrompt:
+      normalized.followupCustomerClickPrompt || DEFAULT_RESEARCH_CONFIG.followupCustomerClickPrompt,
     quickSimilarExtraInstructions:
       normalized.quickSimilarExtraInstructions || DEFAULT_RESEARCH_CONFIG.quickSimilarExtraInstructions,
     industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,

@@ -67,10 +67,10 @@ function parseMarkdownSections(text: string): MarkdownSection[] {
 type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
-  researchBasePrompt: string;
-  quickSimilarBasePrompt: string;
-  quickSimilarQuestionPrompt: string;
-  quickSimilarFollowupPrompt: string;
+  globalSystemPrompt: string;
+  fullResearchPrompt: string;
+  similarCustomersPrompt: string;
+  followupCustomerClickPrompt: string;
   quickSimilarExtraInstructions: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
@@ -94,7 +94,13 @@ type ResearchConfig = {
 const EMPTY_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://www.vendora.se"],
   brandWebsites: [],
-  researchBasePrompt:
+  globalSystemPrompt:
+    "You are an account intelligence and channel sales analyst for Vendora Nordic.\n" +
+    "Output in English only. Be concise, practical, and evidence-based.\n" +
+    "Never invent facts. Unknown data must be labeled Estimated + confidence + signals.\n" +
+    "Use FitScore, PotentialScore, TotalScore (0.55*Fit + 0.45*Potential).\n" +
+    "Only include commercially useful recommendations and clear next actions.",
+  fullResearchPrompt:
     "You are a senior GTM & Channel Analyst for Vendora Nordic.\n\n" +
     "Your task is to evaluate one selected reseller account and produce a practical expansion plan:\n" +
     "1) Score assortment fit (FitScore 0-100).\n" +
@@ -107,11 +113,9 @@ const EMPTY_CONFIG: ResearchConfig = {
     "- Mark unknowns as Estimated + confidence.\n" +
     "- If key data is missing, stay conservative.\n" +
     "- Keep output CRM-ready and actionable.",
-  quickSimilarBasePrompt:
-    "You are an analyst. Return only compact, evidence-based similar reseller accounts for the selected customer. Prioritize practical fit and likely volume.",
-  quickSimilarQuestionPrompt:
+  similarCustomersPrompt:
     "Find up to 8 similar reseller customers based on this selected account. Use country/region scope first and fall back to country when needed. Prefer public company registers/directories and include confidence + source signals.",
-  quickSimilarFollowupPrompt:
+  followupCustomerClickPrompt:
     "Deep-research this selected similar company for Vendora fit and commercial potential. Quantify likely Year-1 potential range, highlight top product families to pitch, and provide concrete next steps.",
   quickSimilarExtraInstructions:
     "Keep the response short. Focus on similar profile in segment, geography and category focus.",
@@ -294,10 +298,10 @@ function ResearchAdminContent() {
   }, []);
 
   useEffect(() => {
-    if (!researchBasePromptDraft && config.researchBasePrompt) {
-      setResearchBasePromptDraft(config.researchBasePrompt);
+    if (!researchBasePromptDraft && config.fullResearchPrompt) {
+      setResearchBasePromptDraft(config.fullResearchPrompt);
     }
-  }, [config.researchBasePrompt, researchBasePromptDraft]);
+  }, [config.fullResearchPrompt, researchBasePromptDraft]);
 
   useEffect(() => {
     if (!researchExtraInstructionsDraft && config.extraInstructions) {
@@ -432,10 +436,10 @@ function ResearchAdminContent() {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
-      researchBasePrompt: String(form.get("researchBasePrompt") ?? "").trim(),
-      quickSimilarBasePrompt: String(form.get("quickSimilarBasePrompt") ?? "").trim(),
-      quickSimilarQuestionPrompt: String(form.get("quickSimilarQuestionPrompt") ?? "").trim(),
-      quickSimilarFollowupPrompt: String(form.get("quickSimilarFollowupPrompt") ?? "").trim(),
+      globalSystemPrompt: String(form.get("globalSystemPrompt") ?? "").trim(),
+      fullResearchPrompt: String(form.get("fullResearchPrompt") ?? "").trim(),
+      similarCustomersPrompt: String(form.get("similarCustomersPrompt") ?? "").trim(),
+      followupCustomerClickPrompt: String(form.get("followupCustomerClickPrompt") ?? "").trim(),
       quickSimilarExtraInstructions: String(form.get("quickSimilarExtraInstructions") ?? "").trim(),
       extraInstructions: String(form.get("extraInstructions") ?? "").trim(),
       defaultScope: String(form.get("defaultScope") ?? "region") === "country" ? "country" : "region",
@@ -661,7 +665,7 @@ function ResearchAdminContent() {
                 <button
                   className="crm-button crm-button-secondary"
                   type="button"
-                  onClick={() => setResearchBasePromptDraft(config.researchBasePrompt)}
+                  onClick={() => setResearchBasePromptDraft(config.fullResearchPrompt)}
                 >
                   {lang === "sv" ? "Återställ grundprompt" : "Reset base prompt"}
                 </button>
@@ -971,34 +975,34 @@ function ResearchAdminContent() {
             <section style={{ display: settingsTab === "prompts" ? "block" : "none" }}>
               <div className="crm-row">
                 <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
-                  {lang === "sv" ? "Full research-prompt (global)" : "Full research prompt (global)"}
+                  {lang === "sv" ? "Global system-prompt" : "Global system prompt"}
                 </p>
                 <textarea
                   className="crm-textarea"
-                  name="researchBasePrompt"
-                  defaultValue={config.researchBasePrompt}
-                  placeholder={lang === "sv" ? "Global grundprompt för research" : "Global base prompt for research"}
+                  name="globalSystemPrompt"
+                  defaultValue={config.globalSystemPrompt}
+                  placeholder={lang === "sv" ? "Global systemprompt för alla AI-körningar" : "Global system prompt for all AI runs"}
                 />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
-                  {lang === "sv" ? "Liknande-kunder prompt (legacy)" : "Similar-customers prompt (legacy)"}
+                  {lang === "sv" ? "Full research-prompt" : "Full research prompt"}
                 </p>
                 <textarea
                   className="crm-textarea"
-                  name="quickSimilarBasePrompt"
-                  defaultValue={config.quickSimilarBasePrompt}
-                  placeholder={lang === "sv" ? "Grundprompt för snabb liknande-kunder AI" : "Base prompt for quick similar-customers AI"}
+                  name="fullResearchPrompt"
+                  defaultValue={config.fullResearchPrompt}
+                  placeholder={lang === "sv" ? "Prompt för komplett research" : "Prompt for full research"}
                 />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
-                  {lang === "sv" ? "Find similar customers: fråga" : "Find similar customers: question prompt"}
+                  {lang === "sv" ? "Similar-customers prompt" : "Similar-customers prompt"}
                 </p>
                 <textarea
                   className="crm-textarea"
-                  name="quickSimilarQuestionPrompt"
-                  defaultValue={config.quickSimilarQuestionPrompt}
+                  name="similarCustomersPrompt"
+                  defaultValue={config.similarCustomersPrompt}
                   placeholder={
                     lang === "sv"
                       ? "Frågeprompt: Find similar customers (AI)"
@@ -1008,12 +1012,12 @@ function ResearchAdminContent() {
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
-                  {lang === "sv" ? "Find similar customers: fördjupning vid klick" : "Find similar customers: follow-up on click"}
+                  {lang === "sv" ? "Follow-up on customer click prompt" : "Follow-up on customer click prompt"}
                 </p>
                 <textarea
                   className="crm-textarea"
-                  name="quickSimilarFollowupPrompt"
-                  defaultValue={config.quickSimilarFollowupPrompt}
+                  name="followupCustomerClickPrompt"
+                  defaultValue={config.followupCustomerClickPrompt}
                   placeholder={
                     lang === "sv"
                       ? "Fördjupningsprompt när du klickar en kund i resultatlistan"
