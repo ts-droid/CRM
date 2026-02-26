@@ -426,6 +426,58 @@ function extractCandidatesFromText(
   return out;
 }
 
+function extractCandidatesFromMarkdownTable(text: string, maxSimilar: number): SimilarCandidate[] {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const tableLines = lines.filter((line) => line.includes("|"));
+  if (tableLines.length < 3) return [];
+
+  const out: SimilarCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const line of tableLines) {
+    if (/^\|?\s*-{2,}/.test(line)) continue;
+    const cols = line
+      .split("|")
+      .map((cell) => cell.trim())
+      .filter(Boolean);
+    if (cols.length < 2) continue;
+    const companyCell = cols[0] ?? "";
+    const lower = companyCell.toLowerCase();
+    if (!companyCell || lower.includes("company") || lower.includes("företag") || lower.includes("name")) continue;
+    if (!looksLikeCompanyName(companyCell)) continue;
+
+    const key = normalizeCompanyName(companyCell);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+
+    const regionCell = cols[1] ?? "";
+    const websiteCell = cols.find((cell) => /https?:\/\//i.test(cell)) ?? null;
+    const website = websiteCell ? websiteCell.match(/https?:\/\/\S+/i)?.[0] ?? null : null;
+
+    out.push({
+      id: `external-table-${out.length + 1}`,
+      name: companyCell,
+      country: null,
+      region: regionCell || null,
+      industry: null,
+      seller: null,
+      potentialScore: 50,
+      matchScore: 50,
+      website,
+      reason: "Extracted from AI markdown table",
+      sourceType: "llm-chat",
+      sourceUrl: website,
+      confidence: "low"
+    });
+    if (out.length >= maxSimilar) break;
+  }
+
+  return out;
+}
+
 function composePrompt(systemPrompt: string, taskPrompt: string): string {
   const system = String(systemPrompt ?? "").trim();
   const task = String(taskPrompt ?? "").trim();
@@ -681,32 +733,13 @@ export async function POST(req: Request) {
         });
       }
 
-      const externalDiscovery = await discoverExternalSeeds({
-        companyName,
-        country,
-        region,
-        industry,
-        segmentFocus,
-        maxResults: Math.max(10, maxSimilar * 2),
-        excludeDomain: baseCustomer?.website ?? null,
-        seedContext: [
-          baseCustomer?.name,
-          baseCustomer?.organization,
-          baseCustomer?.industry,
-          baseCustomer?.notes,
-          ...websiteSnapshots.map((snapshot) => `${snapshot.title ?? ""} ${snapshot.description ?? ""} ${snapshot.h1 ?? ""} ${snapshot.textSample ?? ""}`)
-        ]
-          .filter(Boolean)
-          .join(" ")
-      });
-
       const mergedExtraInstructions = [settings.quickSimilarExtraInstructions, settings.extraInstructions, body.extraInstructions]
         .map((value) => String(value ?? "").trim())
         .filter(Boolean)
         .join("\n\n");
       const registryHints = registryHintsForCountry(country);
       const taskBasePrompt = body.basePrompt?.trim() || settings.similarCustomersPrompt;
-      const taskPrompt = buildTaskPrompt(taskBasePrompt, {
+      const primaryTaskPrompt = buildTaskPrompt(taskBasePrompt, {
         reference_customer: {
           name: companyName,
           organization: baseCustomer?.organization ?? null,
@@ -723,8 +756,8 @@ export async function POST(req: Request) {
           strategic_focus: settings.industries
         },
         discovery_inputs: {
-          candidate_pool_list: externalDiscovery.candidates,
-          web_discovery_allowed: externalDiscovery.candidates.length === 0,
+          candidate_pool_list: [],
+          web_discovery_allowed: true,
           allowed_sources: registryHints
         },
         filters: {
@@ -737,7 +770,11 @@ export async function POST(req: Request) {
         },
         additional_instructions: mergedExtraInstructions || null
       });
-      const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
+      let finalPrompt = composePrompt(settings.globalSystemPrompt, primaryTaskPrompt);
+      let externalDiscovery: Awaited<ReturnType<typeof discoverExternalSeeds>> = {
+        candidates: [],
+        usedProviders: []
+      };
 
       let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
       let aiError: string | null = null;
@@ -752,6 +789,12 @@ export async function POST(req: Request) {
 
       if (aiResult?.outputText) {
         similarCustomers = extractSimilarCandidates(extractJsonValue(aiResult.outputText), maxSimilar);
+        if (similarCustomers.length === 0) {
+          similarCustomers = extractCandidatesFromMarkdownTable(aiResult.outputText, maxSimilar);
+        }
+        if (similarCustomers.length === 0) {
+          similarCustomers = extractCandidatesFromText(aiResult.outputText, maxSimilar);
+        }
       }
 
       similarCustomers = hardFilterCompanyCandidates(similarCustomers);
@@ -761,29 +804,101 @@ export async function POST(req: Request) {
         settings.globalSystemPrompt
       );
 
+      if (similarCustomers.length === 0) {
+        externalDiscovery = await discoverExternalSeeds({
+          companyName,
+          country,
+          region,
+          industry,
+          segmentFocus,
+          maxResults: Math.max(10, maxSimilar * 2),
+          excludeDomain: baseCustomer?.website ?? null,
+          seedContext: [
+            baseCustomer?.name,
+            baseCustomer?.organization,
+            baseCustomer?.industry,
+            baseCustomer?.notes,
+            ...websiteSnapshots.map(
+              (snapshot) => `${snapshot.title ?? ""} ${snapshot.description ?? ""} ${snapshot.h1 ?? ""} ${snapshot.textSample ?? ""}`
+            )
+          ]
+            .filter(Boolean)
+            .join(" ")
+        });
+      }
+
       if (similarCustomers.length === 0 && externalDiscovery.candidates.length > 0) {
-        similarCustomers = externalDiscovery.candidates.slice(0, maxSimilar).map((candidate, index) => ({
-          id: `external-seed-${index + 1}`,
-          name: candidate.name,
-          country: country ?? null,
-          region: region ?? null,
-          industry: industry ?? null,
-          seller: null,
-          potentialScore: 45,
-          matchScore: 45,
-          website: candidate.website,
-          organizationNumber: null,
-          reason: candidate.snippet || "External discovery seed",
-          sourceType: candidate.sourceType,
-          sourceUrl: candidate.sourceUrl,
-          confidence: "low"
-        }));
+        const fallbackTaskPrompt = buildTaskPrompt(taskBasePrompt, {
+          reference_customer: {
+            name: companyName,
+            organization: baseCustomer?.organization ?? null,
+            country,
+            region,
+            industry,
+            segment_focus: segmentFocus,
+            website_data: websiteSnapshots
+          },
+          vendora: {
+            countries_served: settings.countries,
+            positioning: "Vendora Nordic channel distributor",
+            assortment_catalog: websites,
+            strategic_focus: settings.industries
+          },
+          discovery_inputs: {
+            candidate_pool_list: externalDiscovery.candidates,
+            web_discovery_allowed: false,
+            allowed_sources: registryHints
+          },
+          filters: {
+            scope,
+            countries: country ? [country] : settings.countries,
+            regions: region ? [region] : [],
+            segment_focus: segmentFocus,
+            max_results_per_group: maxSimilar,
+            exclude_distributors: true
+          },
+          additional_instructions: mergedExtraInstructions || null
+        });
+        finalPrompt = composePrompt(settings.globalSystemPrompt, fallbackTaskPrompt);
+
+        try {
+          const fallbackAiResult = await generateWithGemini(finalPrompt);
+          if (fallbackAiResult?.outputText) {
+            aiResult = fallbackAiResult;
+            similarCustomers = extractSimilarCandidates(extractJsonValue(fallbackAiResult.outputText), maxSimilar);
+            if (similarCustomers.length === 0) {
+              similarCustomers = extractCandidatesFromMarkdownTable(fallbackAiResult.outputText, maxSimilar);
+            }
+            if (similarCustomers.length === 0) {
+              similarCustomers = extractCandidatesFromText(fallbackAiResult.outputText, maxSimilar);
+            }
+          }
+        } catch {
+          // keep previous aiResult and continue fallback chain
+        }
+
         similarCustomers = hardFilterCompanyCandidates(similarCustomers);
       }
 
-      if (similarCustomers.length === 0 && aiResult?.outputText) {
-        similarCustomers = extractCandidatesFromText(aiResult.outputText, maxSimilar);
-        similarCustomers = hardFilterCompanyCandidates(similarCustomers);
+      if (similarCustomers.length === 0 && externalDiscovery.candidates.length > 0) {
+        similarCustomers = hardFilterCompanyCandidates(
+          externalDiscovery.candidates.slice(0, maxSimilar).map((candidate, index) => ({
+            id: `external-seed-${index + 1}`,
+            name: candidate.name,
+            country: country ?? null,
+            region: region ?? null,
+            industry: industry ?? null,
+            seller: null,
+            potentialScore: 45,
+            matchScore: 45,
+            website: candidate.website,
+            organizationNumber: null,
+            reason: candidate.snippet || "External discovery seed",
+            sourceType: candidate.sourceType,
+            sourceUrl: candidate.sourceUrl,
+            confidence: "low"
+          }))
+        );
       }
 
       if (similarCustomers.length === 0) {
