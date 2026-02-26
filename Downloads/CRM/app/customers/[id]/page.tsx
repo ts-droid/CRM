@@ -200,6 +200,17 @@ type MarkdownSection = {
   body: string;
 };
 
+type LookalikeRow = {
+  rank: number;
+  company: string;
+  country: string;
+  segment: string;
+  fit: string;
+  potential: string;
+  total: string;
+  confidence: string;
+};
+
 function parseMarkdownSections(text: string): MarkdownSection[] {
   const lines = text.split("\n");
   const sections: MarkdownSection[] = [];
@@ -227,6 +238,44 @@ function parseMarkdownSections(text: string): MarkdownSection[] {
 
   pushCurrent();
   return sections.filter((section) => section.body.length > 0 || section.title !== "Output");
+}
+
+function parseLookalikeTable(text: string): LookalikeRow[] {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const tableLines = lines.filter((line) => line.includes("|"));
+  if (tableLines.length < 3) return [];
+
+  const rows: LookalikeRow[] = [];
+  let seenHeader = false;
+
+  for (const line of tableLines) {
+    if (/^\|?\s*-{2,}/.test(line)) continue;
+    const cols = line.split("|").map((cell) => cell.trim()).filter(Boolean);
+    if (cols.length < 8) continue;
+    const normalized = cols.map((c) => c.toLowerCase());
+    if (!seenHeader && normalized.some((c) => c === "company") && normalized.some((c) => c === "country")) {
+      seenHeader = true;
+      continue;
+    }
+    if (!seenHeader) continue;
+
+    const rankNum = Number(cols[0]?.replace(/[^\d]/g, ""));
+    const company = cols[1] ?? "";
+    if (!company || Number.isNaN(rankNum)) continue;
+
+    rows.push({
+      rank: rankNum,
+      company,
+      country: cols[2] ?? "-",
+      segment: cols[3] ?? "-",
+      fit: cols[4] ?? "-",
+      potential: cols[5] ?? "-",
+      total: cols[6] ?? "-",
+      confidence: cols[7] ?? "-"
+    });
+  }
+
+  return rows.sort((a, b) => a.rank - b.rank);
 }
 
 function extractDrillCandidatesFromText(text: string, max = 30): string[] {
@@ -512,6 +561,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     ? new Date(customer.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "--:--";
   const similarAiSections = parseMarkdownSections(similarAiOutput);
+  const lookalikeRows = parseLookalikeTable(similarAiOutput);
   const aiDrillNames = extractDrillCandidatesFromText(similarAiOutput, 24);
   const similarResearchSections = parseMarkdownSections(selectedSimilarResearch);
 
@@ -981,6 +1031,63 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                     ) : (
                       <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{similarAiOutput}</pre>
                     )}
+                    {lookalikeRows.length > 0 ? (
+                      <div style={{ marginTop: "0.7rem", overflowX: "auto" }}>
+                        <p className="crm-subtle" style={{ marginBottom: "0.45rem" }}>
+                          {lang === "sv" ? "Lookalike targets (klicka bolag för drill-down)" : "Lookalike targets (click company for drill-down)"}
+                        </p>
+                        <table className="crm-table">
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Company</th>
+                              <th>{lang === "sv" ? "Land" : "Country"}</th>
+                              <th>Seg</th>
+                              <th>Fit</th>
+                              <th>Pot</th>
+                              <th>Total</th>
+                              <th>{lang === "sv" ? "Säkerhet" : "Confidence"}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lookalikeRows.map((row) => (
+                              <tr key={`${row.rank}-${row.company}`}>
+                                <td>{row.rank}</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="crm-button crm-button-secondary"
+                                    style={{ padding: "0.25rem 0.5rem" }}
+                                    onClick={() =>
+                                      runDeepResearchForSimilar({
+                                        id: `table-${row.rank}-${row.company.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+                                        name: row.company,
+                                        country: row.country || customer.country || null,
+                                        region: customer.region ?? null,
+                                        industry: customer.industry ?? null,
+                                        seller: null,
+                                        potentialScore: Number(row.potential) || 50,
+                                        matchScore: Number(row.total) || Number(row.fit) || 50,
+                                        confidence: row.confidence.toLowerCase(),
+                                        sourceType: "ai-chat-table"
+                                      })
+                                    }
+                                  >
+                                    {row.company}
+                                  </button>
+                                </td>
+                                <td>{row.country}</td>
+                                <td>{row.segment}</td>
+                                <td>{row.fit}</td>
+                                <td>{row.potential}</td>
+                                <td>{row.total}</td>
+                                <td>{row.confidence}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
                     {aiDrillNames.length > 0 ? (
                       <div style={{ marginTop: "0.7rem" }}>
                         <p className="crm-subtle" style={{ marginBottom: "0.4rem" }}>
