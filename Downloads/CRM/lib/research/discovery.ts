@@ -14,6 +14,7 @@ type DiscoveryInput = {
   segmentFocus?: "B2B" | "B2C" | "MIXED";
   maxResults?: number;
   excludeDomain?: string | null;
+  seedContext?: string;
 };
 
 type SerperResponse = {
@@ -39,6 +40,10 @@ const BLOCKED_DOMAINS = new Set([
   "owler.com",
   "zoominfo.com",
   "apollo.io",
+  "clutch.co",
+  "sortlist.com",
+  "goodfirms.co",
+  "designrush.com",
   "yelp.com",
   "glassdoor.com",
   "bullfincher.io",
@@ -129,6 +134,8 @@ function isBlockedPath(value: string | null | undefined): boolean {
     const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
     const normalizedPath = `${url.pathname}${url.search}`.toLowerCase();
     if (!normalizedPath || normalizedPath === "/" || normalizedPath.length <= 1) return false;
+    const pathDepth = url.pathname.split("/").filter(Boolean).length;
+    if (pathDepth > 1) return true;
     return BLOCKED_PATH_PARTS.some((part) => normalizedPath.includes(part));
   } catch {
     return true;
@@ -185,6 +192,40 @@ function looksLikeCompany(seed: DiscoverySeed): boolean {
   return hasCompanySuffix(domainName) || !isLikelyGenericTitle(domainName);
 }
 
+function keywordBag(text: string): string[] {
+  const normalized = text.toLowerCase();
+  const prioritized = [
+    "mobile",
+    "iphone",
+    "android",
+    "accessories",
+    "charger",
+    "charging",
+    "cable",
+    "case",
+    "screen protector",
+    "smart home",
+    "usb-c",
+    "magsafe",
+    "powerbank",
+    "headphones",
+    "retail",
+    "ecommerce",
+    "reseller",
+    "office supplies",
+    "workplace"
+  ];
+  return prioritized.filter((keyword) => normalized.includes(keyword));
+}
+
+function matchesSeedContext(seed: DiscoverySeed, seedContext: string): boolean {
+  const contextKeywords = keywordBag(seedContext);
+  if (contextKeywords.length === 0) return true;
+  const text = `${seed.name} ${seed.snippet} ${seed.website ?? ""}`.toLowerCase();
+  const hits = contextKeywords.filter((keyword) => text.includes(keyword)).length;
+  return hits >= 1;
+}
+
 function buildDiscoveryQueries(input: DiscoveryInput): string[] {
   const parts = [
     `"${input.companyName}"`,
@@ -200,10 +241,12 @@ function buildDiscoveryQueries(input: DiscoveryInput): string[] {
 
   const companySuffixHint = (input.country || "").toUpperCase() === "SE" ? "AB" : "company";
 
+  const contextKeywords = keywordBag(input.seedContext ?? "").slice(0, 4).join(" ");
+
   return [
     `${base} competitors`,
     `${base} similar companies`,
-    `${input.industry || "retail"} ${input.region || ""} ${input.country || ""} ${companySuffixHint}`.trim()
+    `${input.industry || "retail"} ${contextKeywords} ${input.region || ""} ${input.country || ""} ${companySuffixHint}`.trim()
   ];
 }
 
@@ -309,6 +352,7 @@ export async function discoverExternalSeeds(input: DiscoveryInput): Promise<{
 
   for (const row of [...serperAll, ...tavilyAll]) {
     if (!looksLikeCompany(row)) continue;
+    if (!matchesSeedContext(row, input.seedContext ?? "")) continue;
     const domain = toDomain(row.website || row.sourceUrl);
     const domainHead = domain.split(".")[0]?.replace(/[-_]+/g, " ").trim() || "";
     const candidateName = isLikelyGenericTitle(row.name) && domainHead ? domainHead : row.name;

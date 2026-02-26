@@ -478,7 +478,16 @@ export async function POST(req: Request) {
         industry,
         segmentFocus,
         maxResults: Math.max(10, maxSimilar * 2),
-        excludeDomain: baseCustomer?.website ?? null
+        excludeDomain: baseCustomer?.website ?? null,
+        seedContext: [
+          baseCustomer?.name,
+          baseCustomer?.organization,
+          baseCustomer?.industry,
+          baseCustomer?.notes,
+          ...websiteSnapshots.map((snapshot) => `${snapshot.title ?? ""} ${snapshot.description ?? ""} ${snapshot.h1 ?? ""} ${snapshot.textSample ?? ""}`)
+        ]
+          .filter(Boolean)
+          .join(" ")
       });
 
       const mergedExtraInstructions = [settings.quickSimilarExtraInstructions, settings.extraInstructions, body.extraInstructions]
