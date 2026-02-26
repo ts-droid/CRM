@@ -229,6 +229,60 @@ function parseMarkdownSections(text: string): MarkdownSection[] {
   return sections.filter((section) => section.body.length > 0 || section.title !== "Output");
 }
 
+function extractDrillCandidatesFromText(text: string, max = 30): string[] {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const pushName = (value: string) => {
+    const name = value.trim().replace(/^\d+\s*/, "");
+    if (!name || name.length < 3 || name.length > 120) return;
+    if (/^selected_account_scorecard/i.test(name) || /^lookalike_targets/i.test(name)) return;
+    if (/^fitscore|^potentialscore|^totalscore|^year-1/i.test(name.toLowerCase())) return;
+    if (!/[a-z]/i.test(name)) return;
+    const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    out.push(name);
+  };
+
+  for (const line of lines) {
+    if (out.length >= max) break;
+
+    if (line.includes("|")) {
+      const cells = line.split("|").map((cell) => cell.trim()).filter(Boolean);
+      if (cells.length > 0) {
+        const first = cells[0];
+        if (first && !/company|företag|name|segment|country|region/i.test(first)) {
+          pushName(first);
+          continue;
+        }
+      }
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      const bullet = line.replace(/^[-*]\s+/, "");
+      const firstPart = bullet.split(/[|–—-]/)[0]?.trim() ?? "";
+      pushName(firstPart);
+      continue;
+    }
+
+    if (/^\d+[\.\)]\s+/.test(line)) {
+      const numbered = line.replace(/^\d+[\.\)]\s+/, "");
+      const firstPart = numbered.split(/[|–—-]/)[0]?.trim() ?? "";
+      pushName(firstPart);
+      continue;
+    }
+
+    const denseRow = line.match(/^(\d+)?\s*([A-Za-z0-9][A-Za-z0-9 .&'/-]{2,60})\s+(Sweden|Norway|Denmark|Finland|Estonia|Latvia|Lithuania|SE|NO|DK|FI|EE|LV|LT)\b/i);
+    if (denseRow?.[2]) {
+      pushName(denseRow[2]);
+    }
+  }
+
+  return out.slice(0, max);
+}
+
 function emptyContactDraft(): ContactDraft {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
@@ -458,6 +512,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     ? new Date(customer.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "--:--";
   const similarAiSections = parseMarkdownSections(similarAiOutput);
+  const aiDrillNames = extractDrillCandidatesFromText(similarAiOutput, 24);
   const similarResearchSections = parseMarkdownSections(selectedSimilarResearch);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
@@ -925,6 +980,38 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                     ) : (
                       <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{similarAiOutput}</pre>
                     )}
+                    {aiDrillNames.length > 0 ? (
+                      <div style={{ marginTop: "0.7rem" }}>
+                        <p className="crm-subtle" style={{ marginBottom: "0.4rem" }}>
+                          {lang === "sv" ? "Klicka för fördjupad research:" : "Click for deep research:"}
+                        </p>
+                        <div className="crm-row">
+                          {aiDrillNames.map((name) => (
+                            <button
+                              key={name}
+                              type="button"
+                              className="crm-button crm-button-secondary"
+                              onClick={() =>
+                                runDeepResearchForSimilar({
+                                  id: `ai-${name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+                                  name,
+                                  country: customer.country ?? null,
+                                  region: customer.region ?? null,
+                                  industry: customer.industry ?? null,
+                                  seller: null,
+                                  potentialScore: 50,
+                                  matchScore: 50,
+                                  confidence: "low",
+                                  sourceType: "ai-chat"
+                                })
+                              }
+                            >
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </article>
                 </div>
               ) : null}
