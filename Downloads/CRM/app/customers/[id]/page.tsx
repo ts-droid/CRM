@@ -184,6 +184,9 @@ type SimilarCustomer = {
   sourceType?: string | null;
   sourceUrl?: string | null;
   confidence?: string | null;
+  fitScore?: number | null;
+  potentialScoreRaw?: number | null;
+  totalScore?: number | null;
   alreadyCustomer?: boolean;
   existingCustomerId?: string | null;
   existingCustomerName?: string | null;
@@ -366,6 +369,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [similarStatus, setSimilarStatus] = useState("");
   const [similarResults, setSimilarResults] = useState<SimilarCustomer[]>([]);
   const [similarAiOutput, setSimilarAiOutput] = useState("");
+  const [similarSortBy, setSimilarSortBy] = useState<"fit" | "country" | "region" | "confidence">("fit");
+  const [similarSortDir, setSimilarSortDir] = useState<"asc" | "desc">("desc");
   const [similarScopeUsed, setSimilarScopeUsed] = useState<"region" | "country" | null>(null);
   const [selectedSimilar, setSelectedSimilar] = useState<SimilarCustomer | null>(null);
   const [selectedSimilarResearch, setSelectedSimilarResearch] = useState("");
@@ -563,6 +568,22 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const similarAiSections = parseMarkdownSections(similarAiOutput);
   const lookalikeRows = parseLookalikeTable(similarAiOutput);
   const aiDrillNames = extractDrillCandidatesFromText(similarAiOutput, 24);
+  const confidenceRank = (value: string | null | undefined) => {
+    const v = String(value ?? "").toLowerCase();
+    if (v.startsWith("high")) return 3;
+    if (v.startsWith("med")) return 2;
+    if (v.startsWith("low")) return 1;
+    return 0;
+  };
+  const sortedSimilarResults = [...similarResults].sort((a, b) => {
+    const dir = similarSortDir === "asc" ? 1 : -1;
+    if (similarSortBy === "country") return dir * String(a.country ?? "").localeCompare(String(b.country ?? ""));
+    if (similarSortBy === "region") return dir * String(a.region ?? "").localeCompare(String(b.region ?? ""));
+    if (similarSortBy === "confidence") return dir * (confidenceRank(a.confidence) - confidenceRank(b.confidence));
+    const fitA = Number(a.fitScore ?? a.matchScore ?? 0);
+    const fitB = Number(b.fitScore ?? b.matchScore ?? 0);
+    return dir * (fitA - fitB);
+  });
   const similarResearchSections = parseMarkdownSections(selectedSimilarResearch);
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
@@ -612,7 +633,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         body: JSON.stringify({
           customerId: params.id,
           scope,
-          maxSimilar: 30,
+          maxSimilar: 500,
           externalOnly: true,
           allowCrmFallback: false,
           basePrompt:
@@ -1125,38 +1146,64 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               ) : null}
               {similarResults.length > 0 ? (
                 <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-                  {similarResults.map((row) => (
-                    <button
-                      key={`${row.id || row.name}-${row.website || ""}`}
-                      type="button"
-                      className="crm-item"
-                      style={{ textAlign: "left", width: "100%", cursor: "pointer" }}
-                      onClick={() => runDeepResearchForSimilar(row)}
-                    >
-                      <div className="crm-item-head">
-                        <strong>{row.name}</strong>
-                        <div className="crm-row">
-                          {row.alreadyCustomer ? (
-                            <span className="crm-badge completed">{lang === "sv" ? "Redan kund" : "Already customer"}</span>
-                          ) : null}
-                          <span className="crm-badge">
-                            {lang === "sv" ? "Match" : "Match"}: {row.matchScore}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
-                        {(row.country || "-")} · {(row.region || "-")} · {(row.industry || "-")} · {(lang === "sv" ? "Potential" : "Potential")}: {row.potentialScore}
-                      </p>
-                      {(row.organizationNumber || row.sourceUrl || row.reason) ? (
-                        <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
-                          {row.organizationNumber ? `${lang === "sv" ? "Org.nr" : "Org no"}: ${row.organizationNumber} · ` : ""}
-                          {row.sourceType ? `${lang === "sv" ? "Källa" : "Source"}: ${row.sourceType}` : ""}
-                          {row.sourceUrl ? ` · ${row.sourceUrl}` : ""}
-                          {row.confidence ? ` · ${lang === "sv" ? "Säkerhet" : "Confidence"}: ${row.confidence}` : ""}
-                        </p>
-                      ) : null}
-                    </button>
-                  ))}
+                  <div className="crm-row" style={{ marginBottom: "0.5rem" }}>
+                    <select className="crm-select" value={similarSortBy} onChange={(event) => setSimilarSortBy(event.target.value as typeof similarSortBy)}>
+                      <option value="fit">{lang === "sv" ? "Sortera: Fit" : "Sort: Fit"}</option>
+                      <option value="country">{lang === "sv" ? "Sortera: Land" : "Sort: Country"}</option>
+                      <option value="region">{lang === "sv" ? "Sortera: Region" : "Sort: Region"}</option>
+                      <option value="confidence">{lang === "sv" ? "Sortera: Säkerhet" : "Sort: Confidence"}</option>
+                    </select>
+                    <select className="crm-select" value={similarSortDir} onChange={(event) => setSimilarSortDir(event.target.value as typeof similarSortDir)}>
+                      <option value="desc">{lang === "sv" ? "Högst först" : "Highest first"}</option>
+                      <option value="asc">{lang === "sv" ? "Lägst först" : "Lowest first"}</option>
+                    </select>
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="crm-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>{lang === "sv" ? "Bolag" : "Company"}</th>
+                          <th>{lang === "sv" ? "Land" : "Country"}</th>
+                          <th>{lang === "sv" ? "Region" : "Region"}</th>
+                          <th>Fit</th>
+                          <th>{lang === "sv" ? "Potential" : "Potential"}</th>
+                          <th>Total</th>
+                          <th>{lang === "sv" ? "Säkerhet" : "Confidence"}</th>
+                          <th>{lang === "sv" ? "Status" : "Status"}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedSimilarResults.map((row, index) => (
+                          <tr key={`${row.id || row.name}-${row.website || ""}`}>
+                            <td>{index + 1}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="crm-button crm-button-secondary"
+                                style={{ padding: "0.25rem 0.5rem" }}
+                                onClick={() => runDeepResearchForSimilar(row)}
+                              >
+                                {row.name}
+                              </button>
+                            </td>
+                            <td>{row.country || "-"}</td>
+                            <td>{row.region || "-"}</td>
+                            <td>{Number(row.fitScore ?? row.matchScore ?? 0)}</td>
+                            <td>{Number(row.potentialScoreRaw ?? row.potentialScore ?? 0)}</td>
+                            <td>{Number(row.totalScore ?? row.matchScore ?? 0)}</td>
+                            <td>{row.confidence || "-"}</td>
+                            <td>{row.alreadyCustomer ? (lang === "sv" ? "Redan kund" : "Already customer") : "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {sortedSimilarResults.length > 0 ? (
+                    <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+                      {lang === "sv" ? `Visar ${sortedSimilarResults.length} kandidater.` : `Showing ${sortedSimilarResults.length} candidates.`}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               {selectedSimilar ? (

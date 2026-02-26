@@ -41,6 +41,8 @@ type SimilarCandidate = {
   sourceType?: string | null;
   sourceUrl?: string | null;
   confidence?: string | null;
+  fitScore?: number | null;
+  potentialScoreRaw?: number | null;
   totalScore?: number | null;
   similarityScore?: number | null;
 };
@@ -542,6 +544,10 @@ function normalizeSimilarCandidate(row: unknown, index: number): SimilarCandidat
   const name = String(item.name ?? item.company ?? "").trim();
   if (!name) return null;
 
+  const fitScore = toScore(item.fitScore ?? item.fit_score ?? null, Number.NaN);
+  const potentialScoreRaw = toScore(item.potentialScore ?? item.potential_score ?? null, Number.NaN);
+  const totalScore = toScore(item.totalScore ?? item.total_score ?? null, Number.NaN);
+
   return {
     id: `external-${index + 1}`,
     name,
@@ -549,7 +555,9 @@ function normalizeSimilarCandidate(row: unknown, index: number): SimilarCandidat
     region: item.region ? String(item.region) : null,
     industry: item.industry ? String(item.industry) : null,
     seller: null,
-    potentialScore: toScore(item.potentialScore ?? item.potential_score ?? item.potential ?? 50, 50),
+    potentialScore: Number.isFinite(potentialScoreRaw)
+      ? potentialScoreRaw
+      : toScore(item.potential ?? 50, 50),
     matchScore: toScore(item.matchScore ?? item.match_score ?? item.match ?? item.score ?? 50, 50),
     website: item.website ? String(item.website) : item.url ? String(item.url) : null,
     organizationNumber:
@@ -573,7 +581,9 @@ function normalizeSimilarCandidate(row: unknown, index: number): SimilarCandidat
     sourceType: item.sourceType ? String(item.sourceType) : item.source_type ? String(item.source_type) : null,
     sourceUrl: item.sourceUrl ? String(item.sourceUrl) : item.source ? String(item.source) : null,
     confidence: item.confidence ? String(item.confidence) : null,
-    totalScore: toScore(item.totalScore ?? item.total_score ?? null, Number.NaN),
+    fitScore: Number.isFinite(fitScore) ? fitScore : null,
+    potentialScoreRaw: Number.isFinite(potentialScoreRaw) ? potentialScoreRaw : null,
+    totalScore: Number.isFinite(totalScore) ? totalScore : null,
     similarityScore: toScore(item.similarityScore ?? item.similarity_score ?? null, Number.NaN)
   };
 }
@@ -614,7 +624,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as Payload;
     const settings = await getResearchConfig();
     const scope = body.scope === "country" ? "country" : body.scope === "region" ? "region" : settings.defaultScope;
-    const maxSimilar = Math.max(1, Math.min(50, body.maxSimilar ?? 10));
+    const maxSimilar = Math.max(1, Math.min(500, body.maxSimilar ?? 10));
 
     let baseCustomer = null as null | MinimalCustomer;
 
@@ -783,7 +793,7 @@ export async function POST(req: Request) {
         [
           "RESPONSE REQUIREMENTS (MANDATORY):",
           "- Return valid JSON only.",
-          "- Include at least 25 candidates when possible (or as many verified candidates as found).",
+          `- Include up to ${maxSimilar} candidates when possible (minimum 25 if data allows).`,
           "- Exclude directory/listing pages and profile databases.",
           "- Prefer official company websites and real retailers/resellers only.",
           "- For each candidate include: company, country, region, segment, fit_score, potential_score, total_score, confidence, website, reason."
@@ -904,7 +914,7 @@ export async function POST(req: Request) {
           region,
           industry,
           segmentFocus,
-          maxResults: Math.max(10, maxSimilar * 2),
+          maxResults: Math.min(800, Math.max(50, maxSimilar * 2)),
           excludeDomain: baseCustomer?.website ?? null,
           seedContext: [
             baseCustomer?.name,
