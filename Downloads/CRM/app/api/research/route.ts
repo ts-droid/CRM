@@ -24,6 +24,24 @@ type Payload = {
 };
 
 type SegmentFocus = "B2B" | "B2C" | "MIXED";
+type SimilarCandidate = {
+  id: string;
+  name: string;
+  country: string | null;
+  region: string | null;
+  industry: string | null;
+  seller: string | null;
+  potentialScore: number;
+  matchScore: number;
+  website?: string | null;
+  organizationNumber?: string | null;
+  reason?: string | null;
+  sourceType?: string | null;
+  sourceUrl?: string | null;
+  confidence?: string | null;
+  totalScore?: number | null;
+  similarityScore?: number | null;
+};
 
 function inferSegmentFocus(text: string): SegmentFocus {
   const normalized = text.toLowerCase();
@@ -194,6 +212,90 @@ function composePrompt(systemPrompt: string, taskPrompt: string): string {
   return `${system}\n\n${task}`;
 }
 
+function buildTaskPrompt(taskPrompt: string, inputPayload: Record<string, unknown>): string {
+  const task = String(taskPrompt ?? "").trim();
+  const inputJson = JSON.stringify(inputPayload, null, 2);
+  if (!task) return `INPUT JSON\n${inputJson}`;
+  return `${task}\n\nINPUT JSON\n${inputJson}`;
+}
+
+function toScore(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeSimilarCandidate(row: unknown, index: number): SimilarCandidate | null {
+  const item = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+  const name = String(item.name ?? item.company ?? "").trim();
+  if (!name) return null;
+
+  return {
+    id: `external-${index + 1}`,
+    name,
+    country: item.country ? String(item.country) : null,
+    region: item.region ? String(item.region) : null,
+    industry: item.industry ? String(item.industry) : null,
+    seller: null,
+    potentialScore: toScore(item.potentialScore ?? item.potential_score ?? item.potential ?? 50, 50),
+    matchScore: toScore(item.matchScore ?? item.match_score ?? item.match ?? item.score ?? 50, 50),
+    website: item.website ? String(item.website) : item.url ? String(item.url) : null,
+    organizationNumber:
+      item.organizationNumber
+        ? String(item.organizationNumber)
+        : item.orgNumber
+        ? String(item.orgNumber)
+        : item.org_no
+        ? String(item.org_no)
+        : null,
+    reason:
+      item.reason
+        ? String(item.reason)
+        : item.why_similar
+        ? String(item.why_similar)
+        : item.why_relevant_for_vendora
+        ? String(item.why_relevant_for_vendora)
+        : item.rationale
+        ? String(item.rationale)
+        : null,
+    sourceType: item.sourceType ? String(item.sourceType) : item.source_type ? String(item.source_type) : null,
+    sourceUrl: item.sourceUrl ? String(item.sourceUrl) : item.source ? String(item.source) : null,
+    confidence: item.confidence ? String(item.confidence) : null,
+    totalScore: toScore(item.totalScore ?? item.total_score ?? null, Number.NaN),
+    similarityScore: toScore(item.similarityScore ?? item.similarity_score ?? null, Number.NaN)
+  };
+}
+
+function extractSimilarCandidates(payload: unknown, maxSimilar: number): SimilarCandidate[] {
+  const parsedObj =
+    payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : null;
+
+  const groups =
+    parsedObj?.candidate_groups && typeof parsedObj.candidate_groups === "object" && !Array.isArray(parsedObj.candidate_groups)
+      ? (parsedObj.candidate_groups as Record<string, unknown>)
+      : null;
+
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(parsedObj?.candidates)
+    ? parsedObj.candidates
+    : Array.isArray(parsedObj?.similarCustomers)
+    ? parsedObj.similarCustomers
+    : Array.isArray(parsedObj?.similar_customers)
+    ? parsedObj.similar_customers
+    : Array.isArray(parsedObj?.results)
+    ? parsedObj.results
+    : Array.isArray(parsedObj?.recommended_targets)
+    ? parsedObj.recommended_targets
+    : groups && Array.isArray(groups.closest_overall_match)
+    ? groups.closest_overall_match
+    : [];
+
+  return rows
+    .map((row, index) => normalizeSimilarCandidate(row, index))
+    .filter((item): item is SimilarCandidate => Boolean(item))
+    .slice(0, maxSimilar);
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Payload;
@@ -291,52 +393,49 @@ export async function POST(req: Request) {
       )
     ).filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-    let similarCustomers: Array<{
-      id: string;
-      name: string;
-      country: string | null;
-      region: string | null;
-      industry: string | null;
-      seller: string | null;
-      potentialScore: number;
-      matchScore: number;
-      website?: string | null;
-      organizationNumber?: string | null;
-      reason?: string | null;
-      sourceType?: string | null;
-      sourceUrl?: string | null;
-      confidence?: string | null;
-    }> = [];
+    let similarCustomers: SimilarCandidate[] = [];
 
     if (body.externalOnly) {
       if (body.externalMode === "profile") {
-        const deepPrompt = [
-          body.basePrompt?.trim() || settings.followupCustomerClickPrompt,
-          "",
-          "Target account context:",
-          `- Name: ${companyName}`,
-          `- Organization / org no hint: ${baseCustomer?.organization ?? "-"}`,
-          `- Country: ${country ?? "-"}`,
-          `- Region: ${region ?? "-"}`,
-          `- Industry: ${industry ?? "-"}`,
-          `- Segment focus: ${segmentFocus}`,
-          "",
-          "Output:",
-          "- FitScore, PotentialScore, TotalScore",
-          "- Year-1 potential range (Low/Base/High)",
-          "- Best categories/brands to pitch first",
-          "- Contact entry paths",
-          "- Outreach angle and concrete next step"
-        ].join("\n");
-
         const mergedExtraInstructions = [settings.extraInstructions, body.extraInstructions]
           .map((value) => String(value ?? "").trim())
           .filter(Boolean)
           .join("\n\n");
-
-        const taskPrompt = mergedExtraInstructions
-          ? `${deepPrompt}\n\nAdditional internal instructions:\n${mergedExtraInstructions}`
-          : deepPrompt;
+        const taskBasePrompt = body.basePrompt?.trim() || settings.followupCustomerClickPrompt;
+        const taskPrompt = buildTaskPrompt(taskBasePrompt, {
+          target_account: {
+            name: companyName,
+            organization: baseCustomer?.organization ?? null,
+            country,
+            region,
+            industry,
+            segment_focus: segmentFocus,
+            seller_owner: seller,
+            legacy_potential_score: potentialScore
+          },
+          vendora: {
+            countries_served: settings.countries,
+            positioning: "Vendora Nordic channel distributor",
+            assortment_catalog: websites,
+            strategic_focus: settings.industries,
+            constraints: [],
+            onboarding_link: settings.vendorWebsites[0] ?? null
+          },
+          research_inputs: {
+            website_data: websiteSnapshots,
+            public_company_data: {},
+            category_signals: [industry].filter(Boolean),
+            brand_signals: [],
+            size_signals: {},
+            contact_signals: [],
+            internal_notes: [baseCustomer?.notes].filter(Boolean)
+          },
+          filters: {
+            scope,
+            exclude_distributors: true
+          },
+          additional_instructions: mergedExtraInstructions || null
+        });
         const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
 
         let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
@@ -368,61 +467,43 @@ export async function POST(req: Request) {
         });
       }
 
-      const registryHints = registryHintsForCountry(country);
-      const externalPrompt = [
-        body.basePrompt?.trim() || settings.similarCustomersPrompt,
-        "",
-        "Task:",
-        `Find ${maxSimilar} similar reseller companies for this target using external/public information only.`,
-        "Do NOT use any internal CRM list.",
-        "",
-        "Target:",
-        `- Name: ${companyName}`,
-        `- Organization / org no hint: ${baseCustomer?.organization ?? "-"}`,
-        `- Country: ${country ?? "-"}`,
-        `- Region: ${region ?? "-"}`,
-        `- Industry: ${industry ?? "-"}`,
-        `- Segment focus: ${segmentFocus}`,
-        `- Scope: ${scope}`,
-        "",
-        "Use these source categories first:",
-        `- ${registryHints.join(", ")}`,
-        "",
-        "Rules:",
-        "- Prefer official registers and trustworthy business directories.",
-        "- If region has too few hits, widen to same country.",
-        "- Only reseller/end-retail companies (not distributors unless clearly retail-facing).",
-        "- Include confidence and a short reason for each candidate.",
-        "",
-        "Output strict JSON only (no extra text) with schema:",
-        "{",
-        '  "candidates": [',
-        "    {",
-        '      "name": "string",',
-        '      "country": "string|null",',
-        '      "region": "string|null",',
-        '      "industry": "string|null",',
-        '      "website": "string|null",',
-        '      "organizationNumber": "string|null",',
-        '      "matchScore": 0,',
-        '      "potentialScore": 0,',
-        '      "reason": "string",',
-        '      "sourceType": "register|directory|estimated",',
-        '      "sourceUrl": "string|null",',
-        '      "confidence": "high|medium|low"',
-        "    }",
-        "  ]",
-        "}"
-      ].join("\n");
-
       const mergedExtraInstructions = [settings.quickSimilarExtraInstructions, settings.extraInstructions, body.extraInstructions]
         .map((value) => String(value ?? "").trim())
         .filter(Boolean)
         .join("\n\n");
-
-      const taskPrompt = mergedExtraInstructions
-        ? `${externalPrompt}\n\nAdditional internal instructions:\n${mergedExtraInstructions}`
-        : externalPrompt;
+      const registryHints = registryHintsForCountry(country);
+      const taskBasePrompt = body.basePrompt?.trim() || settings.similarCustomersPrompt;
+      const taskPrompt = buildTaskPrompt(taskBasePrompt, {
+        reference_customer: {
+          name: companyName,
+          organization: baseCustomer?.organization ?? null,
+          country,
+          region,
+          industry,
+          segment_focus: segmentFocus,
+          website_data: websiteSnapshots
+        },
+        vendora: {
+          countries_served: settings.countries,
+          positioning: "Vendora Nordic channel distributor",
+          assortment_catalog: websites,
+          strategic_focus: settings.industries
+        },
+        discovery_inputs: {
+          candidate_pool_list: [],
+          web_discovery_allowed: true,
+          allowed_sources: registryHints
+        },
+        filters: {
+          scope,
+          countries: country ? [country] : settings.countries,
+          regions: region ? [region] : [],
+          segment_focus: segmentFocus,
+          max_results_per_group: maxSimilar,
+          exclude_distributors: true
+        },
+        additional_instructions: mergedExtraInstructions || null
+      });
       const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
 
       let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
@@ -434,52 +515,7 @@ export async function POST(req: Request) {
       }
 
       if (aiResult?.outputText) {
-        const parsedAny = extractJsonValue(aiResult.outputText);
-        const parsedObj = parsedAny && typeof parsedAny === "object" && !Array.isArray(parsedAny)
-          ? (parsedAny as Record<string, unknown>)
-          : null;
-        const rows = Array.isArray(parsedAny)
-          ? parsedAny
-          : Array.isArray(parsedObj?.candidates)
-          ? parsedObj.candidates
-          : Array.isArray(parsedObj?.similarCustomers)
-          ? parsedObj.similarCustomers
-          : Array.isArray(parsedObj?.similar_customers)
-          ? parsedObj.similar_customers
-          : Array.isArray(parsedObj?.results)
-          ? parsedObj.results
-          : [];
-        similarCustomers = rows
-          .map((row, index) => {
-            const item = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
-            const parsedPotential = Number(item.potentialScore ?? item.potential ?? 50);
-            const parsedMatch = Number(item.matchScore ?? item.match ?? item.score ?? 50);
-            return {
-              id: `external-${index + 1}`,
-              name: String(item.name ?? "").trim(),
-              country: item.country ? String(item.country) : null,
-              region: item.region ? String(item.region) : null,
-              industry: item.industry ? String(item.industry) : null,
-              seller: null,
-              potentialScore: Number.isFinite(parsedPotential) ? parsedPotential : 50,
-              matchScore: Number.isFinite(parsedMatch) ? parsedMatch : 50,
-              website: item.website ? String(item.website) : item.url ? String(item.url) : null,
-              organizationNumber:
-                item.organizationNumber
-                  ? String(item.organizationNumber)
-                  : item.orgNumber
-                  ? String(item.orgNumber)
-                  : item.org_no
-                  ? String(item.org_no)
-                  : null,
-              reason: item.reason ? String(item.reason) : item.rationale ? String(item.rationale) : null,
-              sourceType: item.sourceType ? String(item.sourceType) : item.source_type ? String(item.source_type) : null,
-              sourceUrl: item.sourceUrl ? String(item.sourceUrl) : item.source ? String(item.source) : null,
-              confidence: item.confidence ? String(item.confidence) : null
-            };
-          })
-          .filter((item) => item.name)
-          .slice(0, maxSimilar);
+        similarCustomers = extractSimilarCandidates(extractJsonValue(aiResult.outputText), maxSimilar);
       }
 
       if (similarCustomers.length === 0 && aiResult?.outputText) {
@@ -487,78 +523,38 @@ export async function POST(req: Request) {
       }
 
       if (similarCustomers.length === 0 && !aiError) {
-        const retryPrompt = [
-          body.basePrompt?.trim() || settings.similarCustomersPrompt,
-          "",
-          "Retry mode:",
-          `Return EXACT JSON with at least ${Math.min(5, maxSimilar)} candidates.`,
-          "You may estimate unknown fields as null. Keep only realistic reseller companies.",
-          "",
-          "JSON schema:",
-          "{",
-          '  "candidates": [',
-          "    {",
-          '      "name": "string",',
-          '      "country": "string|null",',
-          '      "region": "string|null",',
-          '      "industry": "string|null",',
-          '      "website": "string|null",',
-          '      "organizationNumber": "string|null",',
-          '      "matchScore": 0,',
-          '      "potentialScore": 0,',
-          '      "reason": "string",',
-          '      "sourceType": "register|directory|estimated",',
-          '      "sourceUrl": "string|null",',
-          '      "confidence": "high|medium|low"',
-          "    }",
-          "  ]",
-          "}"
-        ].join("\n");
+        const taskBasePrompt = body.basePrompt?.trim() || settings.similarCustomersPrompt;
+        const retryPrompt = buildTaskPrompt(taskBasePrompt, {
+          retry_mode: true,
+          instruction: `Return strict JSON with at least ${Math.min(5, maxSimilar)} realistic reseller candidates.`,
+          reference_customer: {
+            name: companyName,
+            country,
+            region,
+            industry,
+            segment_focus: segmentFocus
+          },
+          discovery_inputs: {
+            web_discovery_allowed: true,
+            allowed_sources: registryHints
+          },
+          filters: {
+            scope,
+            max_results_per_group: maxSimilar
+          }
+        });
 
         try {
           const retryResult = await generateWithGemini(composePrompt(settings.globalSystemPrompt, retryPrompt));
           if (retryResult?.outputText) {
-            const parsedAny = extractJsonValue(retryResult.outputText);
-            const parsedObj =
-              parsedAny && typeof parsedAny === "object" && !Array.isArray(parsedAny)
-                ? (parsedAny as Record<string, unknown>)
-                : null;
-            const rows = Array.isArray(parsedAny)
-              ? parsedAny
-              : Array.isArray(parsedObj?.candidates)
-              ? parsedObj.candidates
-              : [];
-            similarCustomers = rows
-              .map((row, index) => {
-                const item = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
-                const parsedPotential = Number(item.potentialScore ?? item.potential ?? 50);
-                const parsedMatch = Number(item.matchScore ?? item.match ?? item.score ?? 50);
-                return {
-                  id: `external-retry-${index + 1}`,
-                  name: String(item.name ?? "").trim(),
-                  country: item.country ? String(item.country) : null,
-                  region: item.region ? String(item.region) : null,
-                  industry: item.industry ? String(item.industry) : null,
-                  seller: null,
-                  potentialScore: Number.isFinite(parsedPotential) ? parsedPotential : 50,
-                  matchScore: Number.isFinite(parsedMatch) ? parsedMatch : 50,
-                  website: item.website ? String(item.website) : item.url ? String(item.url) : null,
-                  organizationNumber:
-                    item.organizationNumber
-                      ? String(item.organizationNumber)
-                      : item.orgNumber
-                      ? String(item.orgNumber)
-                      : item.org_no
-                      ? String(item.org_no)
-                      : null,
-                  reason: item.reason ? String(item.reason) : "Retry extraction",
-                  sourceType: item.sourceType ? String(item.sourceType) : "estimated",
-                  sourceUrl: item.sourceUrl ? String(item.sourceUrl) : null,
-                  confidence: item.confidence ? String(item.confidence) : "low"
-                };
+            similarCustomers = extractSimilarCandidates(extractJsonValue(retryResult.outputText), maxSimilar).map(
+              (candidate) => ({
+                ...candidate,
+                sourceType: candidate.sourceType || "estimated",
+                reason: candidate.reason || "Retry extraction",
+                confidence: candidate.confidence || "low"
               })
-              .filter((item) => item.name)
-              .slice(0, maxSimilar);
+            );
           }
         } catch {
           // keep previous result and surface status via aiError path above if present
@@ -679,10 +675,38 @@ export async function POST(req: Request) {
       .map((value) => String(value ?? "").trim())
       .filter(Boolean)
       .join("\n\n");
-
-    const taskPrompt = mergedExtraInstructions
-      ? `${aiPrompt}\n\nAdditional internal instructions:\n${mergedExtraInstructions}`
-      : aiPrompt;
+    const taskBasePrompt = body.basePrompt?.trim() || settings.fullResearchPrompt;
+    const taskPrompt = buildTaskPrompt(taskBasePrompt, {
+      selected_account: {
+        id: baseCustomer?.id ?? null,
+        name: companyName,
+        country,
+        region,
+        industry,
+        segment_focus: segmentFocus,
+        seller_owner: seller,
+        legacy_potential_score: potentialScore
+      },
+      vendora: {
+        countries_served: settings.countries,
+        positioning: "Vendora Nordic channel distributor",
+        assortment_catalog: websites,
+        strategic_focus: settings.industries,
+        constraints: []
+      },
+      research_inputs: {
+        website_data: websiteSnapshots,
+        similar_candidates_from_crm: similarCustomers,
+        internal_notes: [baseCustomer?.notes].filter(Boolean)
+      },
+      generated_context: aiPrompt,
+      filters: {
+        scope,
+        segment_focus: segmentFocus,
+        max_similar: maxSimilar
+      },
+      additional_instructions: mergedExtraInstructions || null
+    });
     const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
 
     let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
