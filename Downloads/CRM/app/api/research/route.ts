@@ -445,6 +445,9 @@ export async function POST(req: Request) {
         } catch (error) {
           aiError = error instanceof Error ? error.message : "Gemini request failed";
         }
+        if (!aiResult && !aiError) {
+          aiError = "Gemini unavailable: missing GEMINI_API_KEY or model access.";
+        }
 
         return NextResponse.json({
           query: {
@@ -512,6 +515,9 @@ export async function POST(req: Request) {
         aiResult = await generateWithGemini(finalPrompt);
       } catch (error) {
         aiError = error instanceof Error ? error.message : "Gemini request failed";
+      }
+      if (!aiResult && !aiError) {
+        aiError = "Gemini unavailable: missing GEMINI_API_KEY or model access.";
       }
 
       if (aiResult?.outputText) {
@@ -716,6 +722,9 @@ export async function POST(req: Request) {
       aiResult = await generateWithGemini(finalPrompt);
     } catch (error) {
       aiError = error instanceof Error ? error.message : "Gemini request failed";
+    }
+    if (!aiResult && !aiError) {
+      aiError = "Gemini unavailable: missing GEMINI_API_KEY or model access.";
     }
 
     return NextResponse.json({
