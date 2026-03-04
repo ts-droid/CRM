@@ -126,3 +126,14 @@ model SalesRecord {
   @@index([customerId, periodStart, periodEnd])
   @@unique([customerId, source, periodStart, periodEnd])
 }
+
+model UserProfile {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  picture       String?
+  slackMemberId String?
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

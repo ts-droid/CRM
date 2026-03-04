@@ -108,6 +108,15 @@ type ResearchConfig = {
   gmailReplyTo: string;
 };
 
+type AdminUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  slackMemberId: string | null;
+  lastLoginAt: string | null;
+  updatedAt: string;
+};
+
 const EMPTY_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://reseller.vendora.se", "https://www.vendora.se"],
   brandWebsites: [],
@@ -285,6 +294,10 @@ function ResearchAdminContent() {
   const [reassignStatus, setReassignStatus] = useState("");
   const [remindersRunning, setRemindersRunning] = useState(false);
   const [remindersStatus, setRemindersStatus] = useState("");
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersStatus, setUsersStatus] = useState("");
+  const [userSlackDrafts, setUserSlackDrafts] = useState<Record<string, string>>({});
 
   const labels = useMemo(
     () => ({
@@ -315,6 +328,55 @@ function ResearchAdminContent() {
   useEffect(() => {
     loadSettings();
   }, []);
+
+  async function loadAdminUsers() {
+    setUsersLoading(true);
+    setUsersStatus("");
+    try {
+      const res = await fetch("/api/admin/users", { cache: "no-store" });
+      const data = (await res.json()) as { users?: AdminUser[]; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to load users");
+      const users = Array.isArray(data.users) ? data.users : [];
+      setAdminUsers(users);
+      setUserSlackDrafts(
+        users.reduce<Record<string, string>>((acc, user) => {
+          acc[user.id] = user.slackMemberId || "";
+          return acc;
+        }, {})
+      );
+    } catch (error) {
+      setUsersStatus(error instanceof Error ? error.message : "Failed to load users");
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === "settings" && settingsTab === "notifications") {
+      loadAdminUsers();
+    }
+  }, [tab, settingsTab]);
+
+  async function saveUserSlackMemberId(userId: string) {
+    const slackMemberId = (userSlackDrafts[userId] || "").trim();
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId, slackMemberId })
+      });
+      const data = (await res.json()) as { user?: AdminUser; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to save Slack Member ID");
+      const updatedUser = data.user;
+      if (updatedUser) {
+        setAdminUsers((prev) => prev.map((user) => (user.id === updatedUser.id ? updatedUser : user)));
+        setUserSlackDrafts((prev) => ({ ...prev, [updatedUser.id]: updatedUser.slackMemberId || "" }));
+      }
+      setUsersStatus(lang === "sv" ? "Slack Member ID sparat." : "Slack Member ID saved.");
+    } catch (error) {
+      setUsersStatus(error instanceof Error ? error.message : "Failed to save Slack Member ID");
+    }
+  }
 
   useEffect(() => {
     if (!researchBasePromptDraft && config.fullResearchPrompt) {
@@ -1284,6 +1346,66 @@ function ResearchAdminContent() {
                     ? (lang === "sv" ? "Kör..." : "Running...")
                     : (lang === "sv" ? "Kör påminnelser nu" : "Run reminders now")}
                 </button>
+              </div>
+              <div style={{ marginTop: "0.8rem" }}>
+                <div className="crm-item-head">
+                  <p className="crm-subtle" style={{ margin: 0 }}>
+                    {lang === "sv" ? "Användare och Slack Member ID" : "Users and Slack Member ID"}
+                  </p>
+                  <button
+                    className="crm-button crm-button-secondary"
+                    type="button"
+                    onClick={loadAdminUsers}
+                    disabled={usersLoading}
+                  >
+                    {usersLoading
+                      ? (lang === "sv" ? "Uppdaterar..." : "Refreshing...")
+                      : (lang === "sv" ? "Uppdatera lista" : "Refresh list")}
+                  </button>
+                </div>
+                <div className="crm-list" style={{ marginTop: "0.5rem" }}>
+                  {adminUsers.length === 0 ? (
+                    <p className="crm-empty">
+                      {usersLoading
+                        ? (lang === "sv" ? "Laddar användare..." : "Loading users...")
+                        : (lang === "sv"
+                            ? "Inga användare hittades ännu. De visas efter första login."
+                            : "No users found yet. Users appear after first login.")}
+                    </p>
+                  ) : (
+                    adminUsers.map((user) => (
+                      <article className="crm-item" key={user.id}>
+                        <div className="crm-item-head">
+                          <strong>{user.name || user.email}</strong>
+                          <span className="crm-subtle">
+                            {user.lastLoginAt
+                              ? `${lang === "sv" ? "Senast inloggad" : "Last login"}: ${new Date(user.lastLoginAt).toLocaleString()}`
+                              : (lang === "sv" ? "Ingen inloggning ännu" : "No login yet")}
+                          </span>
+                        </div>
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>{user.email}</p>
+                        <div className="crm-row" style={{ marginTop: "0.45rem" }}>
+                          <input
+                            className="crm-input"
+                            value={userSlackDrafts[user.id] ?? ""}
+                            onChange={(event) =>
+                              setUserSlackDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                            placeholder={lang === "sv" ? "Slack Member ID (t.ex. U01234567)" : "Slack Member ID (e.g. U01234567)"}
+                          />
+                          <button
+                            className="crm-button crm-button-secondary"
+                            type="button"
+                            onClick={() => saveUserSlackMemberId(user.id)}
+                          >
+                            {lang === "sv" ? "Spara" : "Save"}
+                          </button>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+                {usersStatus ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{usersStatus}</p> : null}
               </div>
               {remindersStatus ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{remindersStatus}</p> : null}
             </div>

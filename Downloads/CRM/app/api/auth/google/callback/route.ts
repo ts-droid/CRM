@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { NextResponse } from "next/server";
 import { isAllowedEmail, SESSION_COOKIE, signSession } from "@/lib/auth/session";
 import { getPublicOrigin } from "@/lib/auth/url";
+import { prisma } from "@/lib/prisma";
 
 function getRedirectUri(origin: string): string {
   return process.env.GOOGLE_REDIRECT_URL || `${origin}/api/auth/google/callback`;
@@ -36,6 +37,25 @@ export async function GET(req: Request) {
 
     if (!email || !isAllowedEmail(email)) {
       return NextResponse.redirect(new URL("/login?error=not_allowed", publicOrigin));
+    }
+
+    try {
+      await prisma.userProfile.upsert({
+        where: { email },
+        create: {
+          email,
+          name: name || null,
+          picture: picture || null,
+          lastLoginAt: new Date()
+        },
+        update: {
+          name: name || null,
+          picture: picture || null,
+          lastLoginAt: new Date()
+        }
+      });
+    } catch {
+      // Keep auth flow working even if UserProfile table is not deployed yet.
     }
 
     const session = await signSession({ email, name, picture });
