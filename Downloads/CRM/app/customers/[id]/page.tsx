@@ -1017,7 +1017,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   {lang === "sv" ? "Sök liknande kunder (AI)" : "Find similar customers (AI)"}
                 </button>
                 <Link
-                  href={`/admin/research?tab=research&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}&autorun=1`}
+                  href={`/admin/research?tab=research&mode=profile&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}&autorun=1`}
                   className="crm-button crm-button-secondary"
                 >
                   {lang === "sv" ? "Öppna research för kund" : "Open research for customer"}

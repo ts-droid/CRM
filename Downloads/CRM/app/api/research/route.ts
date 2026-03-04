@@ -45,6 +45,9 @@ type SimilarCandidate = {
   potentialScoreRaw?: number | null;
   totalScore?: number | null;
   similarityScore?: number | null;
+  alreadyCustomer?: boolean;
+  existingCustomerId?: string | null;
+  existingCustomerName?: string | null;
 };
 type MinimalCustomer = {
   id: string;
@@ -57,6 +60,7 @@ type MinimalCustomer = {
   notes?: string | null;
   potentialScore: number;
   website?: string | null;
+  webshopSignals?: unknown;
 };
 
 function inferSegmentFocus(text: string): SegmentFocus {
@@ -116,6 +120,221 @@ function extractJsonValue(text: string): unknown {
   }
 
   return null;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function asStringArray(value: unknown): string[] {
+  return asArray(value).map((item) => asString(item)).filter(Boolean);
+}
+
+function clampScore(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+type StructuredResearchInsight = {
+  summary: string;
+  segmentChannelProfile: string[];
+  commercialRelevance: string;
+  verificationStatus: "Verified" | "Estimated" | "NeedsValidation";
+  confidence: "High" | "Medium" | "Low";
+  fitScore: number | null;
+  potentialScore: number | null;
+  totalScore: number | null;
+  year1Potential: {
+    low: string;
+    base: string;
+    high: string;
+    currency: string;
+  };
+  categoriesToPitch: Array<{
+    categoryOrBrand: string;
+    whyItFits: string;
+    opportunityLevel: string;
+  }>;
+  contactPaths: {
+    namedContacts: Array<{ name: string; role: string; sourceNote: string; confidence: string }>;
+    roleBasedPaths: Array<{ function: string; entryPath: string; confidence: string }>;
+    fallbackPath: string;
+  };
+  scoreDrivers: string[];
+  assumptions: string[];
+  nextBestActions: string[];
+  raw: Record<string, unknown>;
+};
+
+function normalizeVerification(value: unknown): StructuredResearchInsight["verificationStatus"] {
+  const normalized = asString(value).toLowerCase();
+  if (normalized.startsWith("verified")) return "Verified";
+  if (normalized.startsWith("needs")) return "NeedsValidation";
+  return "Estimated";
+}
+
+function normalizeConfidence(value: unknown): StructuredResearchInsight["confidence"] {
+  const normalized = asString(value).toLowerCase();
+  if (normalized.startsWith("high")) return "High";
+  if (normalized.startsWith("med")) return "Medium";
+  return "Low";
+}
+
+function parseStructuredResearchInsight(outputText: string): StructuredResearchInsight | null {
+  const parsed = extractJsonValue(outputText);
+  const root = asObject(parsed);
+  if (!root) return null;
+
+  const summaryObj = asObject(root.target_account_summary) ?? asObject(root.account_summary) ?? {};
+  const scoreObj = asObject(root.vendora_match_scorecard) ?? asObject(root.vendora_fit_scorecard) ?? {};
+  const yearObj = asObject(scoreObj.year_1_purchase_potential) ?? {};
+
+  const categoriesRows = asArray(root.best_categories_to_pitch).length
+    ? asArray(root.best_categories_to_pitch)
+    : asArray(root.recommended_categories_to_pitch);
+  const namedContactsRows = asArray(asObject(root.contact_paths)?.named_contacts);
+  const rolePathsRows = asArray(asObject(root.contact_paths)?.role_based_paths);
+
+  const summary = asString(summaryObj.summary);
+  const segmentChannelProfile = asStringArray(summaryObj.segment_channel_profile);
+  const commercialRelevance = asString(summaryObj.commercial_relevance_for_vendora);
+  const fitScore = Number.isFinite(Number(scoreObj.fit_score)) ? clampScore(scoreObj.fit_score, 0) : null;
+  const potentialScore = Number.isFinite(Number(scoreObj.potential_score)) ? clampScore(scoreObj.potential_score, 0) : null;
+  const totalScore = Number.isFinite(Number(scoreObj.total_score)) ? clampScore(scoreObj.total_score, 0) : null;
+
+  const insight: StructuredResearchInsight = {
+    summary,
+    segmentChannelProfile,
+    commercialRelevance,
+    verificationStatus: normalizeVerification(summaryObj.verification_status),
+    confidence: normalizeConfidence(summaryObj.confidence || scoreObj.confidence),
+    fitScore,
+    potentialScore,
+    totalScore,
+    year1Potential: {
+      low: asString(yearObj.low),
+      base: asString(yearObj.base),
+      high: asString(yearObj.high),
+      currency: asString(yearObj.currency) || "SEK"
+    },
+    categoriesToPitch: categoriesRows
+      .map((row) => asObject(row))
+      .filter((row): row is Record<string, unknown> => Boolean(row))
+      .map((row) => ({
+        categoryOrBrand: asString(row.category_or_brand),
+        whyItFits: asString(row.why_it_fits),
+        opportunityLevel: asString(row.opportunity_level) || "Medium"
+      }))
+      .filter((row) => row.categoryOrBrand),
+    contactPaths: {
+      namedContacts: namedContactsRows
+        .map((row) => asObject(row))
+        .filter((row): row is Record<string, unknown> => Boolean(row))
+        .map((row) => ({
+          name: asString(row.name),
+          role: asString(row.role),
+          sourceNote: asString(row.source_note),
+          confidence: asString(row.confidence) || "Low"
+        }))
+        .filter((row) => row.name || row.role),
+      roleBasedPaths: rolePathsRows
+        .map((row) => asObject(row))
+        .filter((row): row is Record<string, unknown> => Boolean(row))
+        .map((row) => ({
+          function: asString(row.function),
+          entryPath: asString(row.likely_entry_path),
+          confidence: asString(row.confidence) || "Low"
+        }))
+        .filter((row) => row.function || row.entryPath),
+      fallbackPath: asString(asObject(root.contact_paths)?.fallback_path)
+    },
+    scoreDrivers: asStringArray(scoreObj.score_drivers),
+    assumptions: asStringArray(scoreObj.assumptions),
+    nextBestActions: asStringArray(root.next_best_actions),
+    raw: root
+  };
+
+  if (
+    !insight.summary &&
+    !insight.commercialRelevance &&
+    !insight.categoriesToPitch.length &&
+    !insight.nextBestActions.length &&
+    insight.totalScore === null
+  ) {
+    return null;
+  }
+
+  return insight;
+}
+
+async function saveResearchInsightToCustomer(
+  customerId: string,
+  insight: StructuredResearchInsight,
+  model: string | null
+) {
+  const existing = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { id: true, potentialScore: true, webshopSignals: true, notes: true }
+  });
+  if (!existing) return null;
+
+  const currentSignals = asObject(existing.webshopSignals) ?? {};
+  const nextSignals = {
+    ...currentSignals,
+    research: {
+      summary: insight.summary,
+      segmentChannelProfile: insight.segmentChannelProfile,
+      commercialRelevance: insight.commercialRelevance,
+      verificationStatus: insight.verificationStatus,
+      confidence: insight.confidence,
+      fitScore: insight.fitScore,
+      potentialScore: insight.potentialScore,
+      totalScore: insight.totalScore,
+      year1Potential: insight.year1Potential,
+      categoriesToPitch: insight.categoriesToPitch,
+      contactPaths: insight.contactPaths,
+      scoreDrivers: insight.scoreDrivers,
+      assumptions: insight.assumptions,
+      nextBestActions: insight.nextBestActions,
+      model: model || null,
+      updatedAt: new Date().toISOString()
+    }
+  };
+
+  const nextPotential =
+    insight.totalScore !== null ? clampScore(insight.totalScore, existing.potentialScore) : existing.potentialScore;
+
+  const noteLine = insight.summary
+    ? `[AI research ${new Date().toISOString()}] ${insight.summary}`
+    : `[AI research ${new Date().toISOString()}] Research updated`;
+  const prevNotes = asString(existing.notes);
+  const mergedNotes = [noteLine, prevNotes].filter(Boolean).join("\n\n").slice(0, 12000);
+
+  return prisma.customer.update({
+    where: { id: customerId },
+    data: {
+      potentialScore: nextPotential,
+      notes: mergedNotes,
+      webshopSignals: nextSignals
+    },
+    select: {
+      id: true,
+      potentialScore: true,
+      notes: true,
+      webshopSignals: true,
+      updatedAt: true
+    }
+  });
 }
 
 function registryHintsForCountry(country: string | null): string[] {
@@ -641,7 +860,8 @@ export async function POST(req: Request) {
           seller: true,
           website: true,
           notes: true,
-          potentialScore: true
+          potentialScore: true,
+          webshopSignals: true
         }
       });
 
@@ -735,6 +955,7 @@ export async function POST(req: Request) {
           },
           research_inputs: {
             website_data: websiteSnapshots,
+            customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
             public_company_data: {},
             category_signals: [industry].filter(Boolean),
             brand_signals: [],
@@ -761,6 +982,12 @@ export async function POST(req: Request) {
           aiError = "Gemini unavailable: missing GEMINI_API_KEY or model access.";
         }
 
+        const structuredInsight = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+        let savedInsight = null;
+        if (baseCustomer?.id && structuredInsight) {
+          savedInsight = await saveResearchInsightToCustomer(baseCustomer.id, structuredInsight, aiResult?.model ?? null);
+        }
+
         return NextResponse.json({
           query: {
             customerId: baseCustomer?.id ?? null,
@@ -776,6 +1003,8 @@ export async function POST(req: Request) {
           },
           websiteSnapshots,
           similarCustomers: [],
+          structuredInsight,
+          savedInsight,
           aiPrompt: finalPrompt,
           aiResult,
           aiError
@@ -857,6 +1086,7 @@ export async function POST(req: Request) {
           web_discovery_allowed: true,
           allowed_sources: registryHints
         },
+        customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
         legal_filters: {
           prefer_same_country: true,
           disallow_directory_pages: true,
@@ -921,6 +1151,7 @@ export async function POST(req: Request) {
             baseCustomer?.organization,
             baseCustomer?.industry,
             baseCustomer?.notes,
+            JSON.stringify(asObject(baseCustomer?.webshopSignals)?.research ?? {}),
             ...websiteSnapshots.map(
               (snapshot) => `${snapshot.title ?? ""} ${snapshot.description ?? ""} ${snapshot.h1 ?? ""} ${snapshot.textSample ?? ""}`
             )
@@ -947,12 +1178,13 @@ export async function POST(req: Request) {
             assortment_catalog: websites,
             strategic_focus: settings.industries
           },
-          discovery_inputs: {
-            candidate_pool_list: externalDiscovery.candidates,
-            web_discovery_allowed: false,
-            allowed_sources: registryHints
-          },
-          legal_filters: {
+        discovery_inputs: {
+          candidate_pool_list: externalDiscovery.candidates,
+          web_discovery_allowed: false,
+          allowed_sources: registryHints
+        },
+        customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
+        legal_filters: {
             prefer_same_country: true,
             disallow_directory_pages: true,
             prefer_official_registry_sources: true,
@@ -1026,6 +1258,7 @@ export async function POST(req: Request) {
             web_discovery_allowed: externalDiscovery.candidates.length === 0,
             allowed_sources: registryHints
           },
+          customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
           filters: {
             scope,
             max_results_per_group: maxSimilar
@@ -1227,6 +1460,7 @@ export async function POST(req: Request) {
       },
       websiteSnapshots,
       similarCustomers,
+      structuredInsight: aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null,
       aiPrompt: finalPrompt,
       aiResult,
       aiError

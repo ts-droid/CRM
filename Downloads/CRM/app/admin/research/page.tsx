@@ -13,9 +13,26 @@ type ResearchResponse = {
     companyName: string;
     scope: "country" | "region";
     segmentFocus?: "B2B" | "B2C" | "MIXED";
+    externalMode?: "similar" | "profile";
   };
   websiteSnapshots: Array<{ url: string; title: string | null; vendoraFitScore: number }>;
   similarCustomers: Array<{ id: string; name: string; matchScore: number; potentialScore: number }>;
+  structuredInsight?: {
+    summary?: string;
+    commercialRelevance?: string;
+    confidence?: "High" | "Medium" | "Low";
+    fitScore?: number | null;
+    potentialScore?: number | null;
+    totalScore?: number | null;
+    year1Potential?: { low?: string; base?: string; high?: string; currency?: string };
+    categoriesToPitch?: Array<{ categoryOrBrand?: string; whyItFits?: string; opportunityLevel?: string }>;
+    nextBestActions?: string[];
+  } | null;
+  savedInsight?: {
+    id: string;
+    potentialScore: number;
+    updatedAt: string;
+  } | null;
   aiPrompt: string;
   aiResult?: { provider: "gemini"; model: string; outputText: string } | null;
   aiError?: string | null;
@@ -245,6 +262,7 @@ function ResearchAdminContent() {
   const [researchCompanyName, setResearchCompanyName] = useState("");
   const [researchScope, setResearchScope] = useState<"region" | "country">("region");
   const [researchSegmentFocus, setResearchSegmentFocus] = useState<"AUTO" | "B2B" | "B2C" | "MIXED">("AUTO");
+  const [researchRunMode, setResearchRunMode] = useState<"profile" | "similar">("profile");
 
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState<string>("");
@@ -319,6 +337,7 @@ function ResearchAdminContent() {
     const companyNameParam = searchParams.get("companyName");
     const scopeParam = searchParams.get("scope");
     const segmentParam = searchParams.get("segmentFocus");
+    const modeParam = searchParams.get("mode");
 
     if (customerIdParam) setResearchCustomerId(customerIdParam);
     if (companyNameParam) setResearchCompanyName(companyNameParam);
@@ -332,7 +351,28 @@ function ResearchAdminContent() {
     } else {
       setResearchSegmentFocus("AUTO");
     }
-  }, [searchParams, config.defaultScope]);
+    setResearchRunMode(modeParam === "similar" ? "similar" : "profile");
+    if (modeParam === "profile") {
+      const current = researchBasePromptDraft.trim();
+      const full = config.fullResearchPrompt.trim();
+      if (!current || current === full) {
+        setResearchBasePromptDraft(config.followupCustomerClickPrompt || config.fullResearchPrompt);
+      }
+    } else if (modeParam === "similar") {
+      const current = researchBasePromptDraft.trim();
+      const followup = config.followupCustomerClickPrompt.trim();
+      if (!current || current === followup) {
+        setResearchBasePromptDraft(config.similarCustomersPrompt || config.fullResearchPrompt);
+      }
+    }
+  }, [
+    searchParams,
+    config.defaultScope,
+    config.followupCustomerClickPrompt,
+    config.fullResearchPrompt,
+    config.similarCustomersPrompt,
+    researchBasePromptDraft
+  ]);
 
   async function conductResearch(websitesRaw: string) {
     setResearchLoading(true);
@@ -349,6 +389,8 @@ function ResearchAdminContent() {
           segmentFocus: researchSegmentFocus === "AUTO" ? undefined : researchSegmentFocus,
           basePrompt: researchBasePromptDraft.trim() || undefined,
           extraInstructions: researchExtraInstructionsDraft.trim() || undefined,
+          externalOnly: true,
+          externalMode: researchRunMode,
           websites: websitesRaw
             .split("\n")
             .map((line) => line.trim())
@@ -633,6 +675,15 @@ function ResearchAdminContent() {
                 </select>
                 <select
                   className="crm-select"
+                  name="runMode"
+                  value={researchRunMode}
+                  onChange={(event) => setResearchRunMode(event.target.value === "similar" ? "similar" : "profile")}
+                >
+                  <option value="profile">{lang === "sv" ? "Läge: Djupanalys av kund" : "Mode: Deep customer profile"}</option>
+                  <option value="similar">{lang === "sv" ? "Läge: Hitta liknande kunder" : "Mode: Find similar customers"}</option>
+                </select>
+                <select
+                  className="crm-select"
                   name="segmentFocus"
                   value={researchSegmentFocus}
                   onChange={(event) =>
@@ -766,6 +817,47 @@ function ResearchAdminContent() {
               <section className="crm-card">
                 <h3>{lang === "sv" ? "AI-rekommendationer" : "AI recommendations"}</h3>
                 {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318" }}>{result.aiError}</p> : null}
+                {result.structuredInsight ? (
+                  <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                    <article className="crm-item">
+                      <p><strong>{lang === "sv" ? "Sammanfattning" : "Summary"}:</strong> {result.structuredInsight.summary || "-"}</p>
+                      <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                        Fit: {result.structuredInsight.fitScore ?? "-"} · Potential: {result.structuredInsight.potentialScore ?? "-"} · Total: {result.structuredInsight.totalScore ?? "-"} · {lang === "sv" ? "Säkerhet" : "Confidence"}: {result.structuredInsight.confidence ?? "-"}
+                      </p>
+                      <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                        Y1: {result.structuredInsight.year1Potential?.low || "-"} / {result.structuredInsight.year1Potential?.base || "-"} / {result.structuredInsight.year1Potential?.high || "-"} {result.structuredInsight.year1Potential?.currency || ""}
+                      </p>
+                      {result.savedInsight ? (
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                          {lang === "sv" ? "Sparat på kund" : "Saved on customer"} · Potential: {result.savedInsight.potentialScore} · {new Date(result.savedInsight.updatedAt).toLocaleString()}
+                        </p>
+                      ) : null}
+                    </article>
+                    {Array.isArray(result.structuredInsight.categoriesToPitch) && result.structuredInsight.categoriesToPitch.length > 0 ? (
+                      <article className="crm-item">
+                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Prioriterade produktområden" : "Priority product areas"}</h4>
+                        <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                          {result.structuredInsight.categoriesToPitch.slice(0, 10).map((item, index) => (
+                            <li key={`${item.categoryOrBrand || "item"}-${index}`}>
+                              <strong>{item.categoryOrBrand || "-"}</strong>
+                              {item.whyItFits ? ` - ${item.whyItFits}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    ) : null}
+                    {Array.isArray(result.structuredInsight.nextBestActions) && result.structuredInsight.nextBestActions.length > 0 ? (
+                      <article className="crm-item">
+                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Nästa steg" : "Next steps"}</h4>
+                        <ol style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                          {result.structuredInsight.nextBestActions.slice(0, 8).map((step, index) => (
+                            <li key={`${step}-${index}`}>{step}</li>
+                          ))}
+                        </ol>
+                      </article>
+                    ) : null}
+                  </div>
+                ) : null}
                 {aiBullets.length > 0 ? (
                   <div className="crm-list" style={{ marginTop: "0.7rem" }}>
                     {aiBullets.map((bullet, index) => (
