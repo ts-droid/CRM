@@ -5,7 +5,7 @@ import { useI18n } from "@/components/i18n";
 import { useSearchParams } from "next/navigation";
 
 type TabKey = "import-export" | "research" | "settings";
-type SettingsTabKey = "base" | "prompts" | "notifications";
+type SettingsTabKey = "base" | "sources" | "prompts" | "notifications";
 
 type ResearchResponse = {
   query: {
@@ -44,6 +44,7 @@ type ResearchResponse = {
   } | null;
   aiPrompt: string;
   usedExtraInstructions?: string | null;
+  companySignals?: Array<{ title: string; url: string; snippet: string; sourceType: string }> | null;
   aiResult?: { provider: "gemini"; model: string; outputText: string } | null;
   aiError?: string | null;
 };
@@ -94,6 +95,9 @@ function parseMarkdownSections(text: string): MarkdownSection[] {
 type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
+  preferredSourceDomains: string[];
+  blockedSourceDomains: string[];
+  registrySourceUrls: string[];
   globalSystemPrompt: string;
   fullResearchPrompt: string;
   similarCustomersPrompt: string;
@@ -131,6 +135,9 @@ type AdminUser = {
 const EMPTY_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://reseller.vendora.se", "https://www.vendora.se"],
   brandWebsites: [],
+  preferredSourceDomains: ["allabolag.se", "proff.se", "finder.fi", "asiakastieto.fi", "linkedin.com"],
+  blockedSourceDomains: ["glassdoor.com", "clutch.co", "rocketreach.co", "yelp.com"],
+  registrySourceUrls: ["https://www.allabolag.se", "https://www.proff.se", "https://www.asiakastieto.fi"],
   globalSystemPrompt:
     "You are an account intelligence and channel sales analyst for Vendora Nordic.\n" +
     "Output in English only. Be concise, practical, and evidence-based.\n" +
@@ -573,6 +580,18 @@ function ResearchAdminContent() {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
+      preferredSourceDomains: String(form.get("preferredSourceDomains") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+      blockedSourceDomains: String(form.get("blockedSourceDomains") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+      registrySourceUrls: String(form.get("registrySourceUrls") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
       globalSystemPrompt: String(form.get("globalSystemPrompt") ?? "").trim(),
       fullResearchPrompt: String(form.get("fullResearchPrompt") ?? "").trim(),
       similarCustomersPrompt: String(form.get("similarCustomersPrompt") ?? "").trim(),
@@ -959,21 +978,40 @@ function ResearchAdminContent() {
                           </ul>
                         </article>
                       ) : null}
+                      {Array.isArray(result.companySignals) && result.companySignals.length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Källor som användes" : "Sources used"}</h4>
+                          <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                            {result.companySignals.slice(0, 12).map((signal, index) => (
+                              <li key={`${signal.url}-${index}`}>
+                                <a href={signal.url} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                  {signal.title || signal.url}
+                                </a>
+                                {signal.sourceType ? ` (${signal.sourceType})` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
+                      ) : null}
                       {result.aiResult?.outputText ? (
                         <article className="crm-item">
-                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Fördjupad analys" : "Detailed analysis"}</h4>
-                          {aiSections.length > 0 ? (
-                            <div className="crm-list" style={{ marginTop: "0.6rem" }}>
-                              {aiSections.map((section) => (
-                                <article key={section.title} className="crm-item">
-                                  <h5 style={{ margin: 0 }}>{section.title}</h5>
-                                  <pre className="crm-pre" style={{ marginTop: "0.4rem" }}>{section.body}</pre>
-                                </article>
-                              ))}
-                            </div>
-                          ) : (
-                            <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{result.aiResult.outputText}</pre>
-                          )}
+                          <details>
+                            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                              {lang === "sv" ? "Visa rå AI-output" : "Show raw AI output"}
+                            </summary>
+                            {aiSections.length > 0 ? (
+                              <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                                {aiSections.map((section) => (
+                                  <article key={section.title} className="crm-item">
+                                    <h5 style={{ margin: 0 }}>{section.title}</h5>
+                                    <pre className="crm-pre" style={{ marginTop: "0.4rem" }}>{section.body}</pre>
+                                  </article>
+                                ))}
+                              </div>
+                            ) : (
+                              <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{result.aiResult.outputText}</pre>
+                            )}
+                          </details>
                         </article>
                       ) : null}
                       {result.usedExtraInstructions ? (
@@ -1152,6 +1190,13 @@ function ResearchAdminContent() {
             </button>
             <button
               type="button"
+              className={`crm-tab ${settingsTab === "sources" ? "active" : ""}`}
+              onClick={() => setSettingsTab("sources")}
+            >
+              {lang === "sv" ? "Källor" : "Sources"}
+            </button>
+            <button
+              type="button"
               className={`crm-tab ${settingsTab === "prompts" ? "active" : ""}`}
               onClick={() => setSettingsTab("prompts")}
             >
@@ -1289,6 +1334,42 @@ function ResearchAdminContent() {
                     <span>Seller</span>
                   </label>
                 </div>
+              </div>
+            </section>
+
+            <section style={{ display: settingsTab === "sources" ? "block" : "none" }}>
+              <div className="crm-row">
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Prioriterade källdomäner (en per rad)" : "Preferred source domains (one per line)"}
+                </p>
+                <textarea
+                  className="crm-textarea"
+                  name="preferredSourceDomains"
+                  defaultValue={config.preferredSourceDomains.join("\n")}
+                  placeholder="allabolag.se"
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Blockerade domäner (en per rad)" : "Blocked domains (one per line)"}
+                </p>
+                <textarea
+                  className="crm-textarea"
+                  name="blockedSourceDomains"
+                  defaultValue={config.blockedSourceDomains.join("\n")}
+                  placeholder="glassdoor.com"
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Företagsregister-källor (URL, en per rad)" : "Company registry sources (URL, one per line)"}
+                </p>
+                <textarea
+                  className="crm-textarea"
+                  name="registrySourceUrls"
+                  defaultValue={config.registrySourceUrls.join("\n")}
+                  placeholder="https://www.allabolag.se"
+                />
               </div>
             </section>
 

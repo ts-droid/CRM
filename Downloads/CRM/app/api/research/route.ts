@@ -91,21 +91,34 @@ function segmentMatches(target: SegmentFocus, candidate: SegmentFocus): boolean 
 }
 
 function extractJsonObject(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  const candidates = [trimmed];
-  const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
-  if (fencedMatch?.[1]) candidates.push(fencedMatch[1].trim());
-  const genericFence = trimmed.match(/```\s*([\s\S]*?)```/i);
-  if (genericFence?.[1]) candidates.push(genericFence[1].trim());
+  const parsed = extractJsonValue(text);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return null;
+}
 
-  for (const candidate of candidates) {
+function parseJsonLoose(candidate: string): unknown {
+  const text = String(candidate ?? "").trim();
+  if (!text) return null;
+  const attempts: string[] = [text];
+  const firstCurly = text.indexOf("{");
+  const lastCurly = text.lastIndexOf("}");
+  if (firstCurly >= 0 && lastCurly > firstCurly) {
+    attempts.push(text.slice(firstCurly, lastCurly + 1).trim());
+  }
+  const noTrailingComma = text.replace(/,\s*([}\]])/g, "$1");
+  if (noTrailingComma !== text) attempts.push(noTrailingComma);
+  if (firstCurly >= 0 && lastCurly > firstCurly) {
+    const extractedNoTrailing = text.slice(firstCurly, lastCurly + 1).replace(/,\s*([}\]])/g, "$1").trim();
+    attempts.push(extractedNoTrailing);
+  }
+
+  for (const attempt of attempts) {
     try {
-      const parsed = JSON.parse(candidate) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
+      return JSON.parse(attempt);
     } catch {
-      // try next candidate
+      // continue
     }
   }
 
@@ -121,11 +134,8 @@ function extractJsonValue(text: string): unknown {
   if (genericFence?.[1]) candidates.push(genericFence[1].trim());
 
   for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      // try next candidate
-    }
+    const parsed = parseJsonLoose(candidate);
+    if (parsed !== null) return parsed;
   }
 
   return null;
@@ -519,7 +529,7 @@ function looksLikeCompanyName(value: string): boolean {
   return true;
 }
 
-function hardFilterCompanyCandidates(candidates: SimilarCandidate[]): SimilarCandidate[] {
+function hardFilterCompanyCandidates(candidates: SimilarCandidate[], blockedDomainsInput: string[] = []): SimilarCandidate[] {
   const blockedDomains = new Set([
     "trustpilot.com",
     "companydata.com",
@@ -541,7 +551,8 @@ function hardFilterCompanyCandidates(candidates: SimilarCandidate[]): SimilarCan
     "rocketreach.com",
     "signalhire.com",
     "contactout.com",
-    "theorg.com"
+    "theorg.com",
+    ...normalizeDomainList(blockedDomainsInput)
   ]);
   const out: SimilarCandidate[] = [];
   const seenNames = new Set<string>();
@@ -566,12 +577,19 @@ function hardFilterCompanyCandidates(candidates: SimilarCandidate[]): SimilarCan
   return out;
 }
 
-function enforceCountryAndRegistryQuality(candidates: SimilarCandidate[], country: string | null): SimilarCandidate[] {
+function enforceCountryAndRegistryQuality(
+  candidates: SimilarCandidate[],
+  country: string | null,
+  blockedDomainsInput: string[] = []
+): SimilarCandidate[] {
+  const blockedDomains = normalizeDomainList(blockedDomainsInput);
   return candidates.filter((candidate) => {
     const domain = websiteDomain(candidate.website || candidate.sourceUrl || "");
     if (!domain) return false;
+    if (blockedDomains.some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`))) return false;
     if (!domainMatchesCountry(domain, country)) return false;
     if (pathLooksLikeContentPage(candidate.website || candidate.sourceUrl || "")) return false;
+    if (!isLikelyCompanyCandidateName(candidate.name)) return false;
     return true;
   });
 }
@@ -851,6 +869,47 @@ function normalizeSearchUrl(raw: string): string {
   }
 }
 
+function normalizeDomainList(list: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      list
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+        .map((value) => toDomain(value))
+        .filter(Boolean)
+    )
+  );
+}
+
+function isBlockedDomain(url: string | null | undefined, blockedDomains: string[]): boolean {
+  const host = toDomain(url);
+  if (!host) return false;
+  return blockedDomains.some((domain) => host === domain || host.endsWith(`.${domain}`));
+}
+
+function isLikelyCompanyCandidateName(value: string): boolean {
+  const name = String(value ?? "").trim();
+  if (!name) return false;
+  if (name.length > 120) return false;
+  const lowered = name.toLowerCase();
+  const banned = [
+    "privacy policy",
+    "careers",
+    "jobs",
+    "terms",
+    "cookie",
+    "report a concern",
+    "annual report",
+    "what does your",
+    "top ",
+    "list of ",
+    "reviews of ",
+    "[pdf]"
+  ];
+  if (banned.some((token) => lowered.includes(token))) return false;
+  return /[a-zåäö]/i.test(name);
+}
+
 async function fetchSerperCompanySignals(query: string, maxResults: number): Promise<CompanySignal[]> {
   const apiKey = process.env.SERPER_API_KEY?.trim();
   if (!apiKey) return [];
@@ -936,6 +995,8 @@ async function discoverCompanySignals(input: {
   website?: string | null;
   industry?: string | null;
   maxResults?: number;
+  blockedDomains?: string[];
+  preferredDomains?: string[];
 }): Promise<CompanySignal[]> {
   const maxResults = Math.min(20, Math.max(8, input.maxResults ?? 12));
   const countryToken = (input.country || "").trim();
@@ -943,6 +1004,8 @@ async function discoverCompanySignals(input: {
   const orgToken = (input.organizationNumber || "").trim();
   const industryToken = (input.industry || "").trim();
   const websiteDomain = toDomain(input.website);
+  const blockedDomains = normalizeDomainList(input.blockedDomains ?? []);
+  const preferredDomains = normalizeDomainList(input.preferredDomains ?? []);
 
   const queries = [
     `"${input.companyName}" ${countryToken} ${regionToken} official website`,
@@ -973,6 +1036,7 @@ async function discoverCompanySignals(input: {
   for (const signal of all) {
     const normalizedUrl = normalizeSearchUrl(signal.url);
     if (!normalizedUrl) continue;
+    if (isBlockedDomain(normalizedUrl, blockedDomains)) continue;
     const key = `${signal.sourceType}:${normalizedUrl}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -996,8 +1060,19 @@ async function discoverCompanySignals(input: {
     });
     if (filtered.length >= maxResults) break;
   }
-
-  return filtered;
+  if (preferredDomains.length === 0) return filtered;
+  return filtered.sort((a, b) => {
+    const aPreferred = preferredDomains.some((domain) => {
+      const host = toDomain(a.url);
+      return host === domain || host.endsWith(`.${domain}`);
+    });
+    const bPreferred = preferredDomains.some((domain) => {
+      const host = toDomain(b.url);
+      return host === domain || host.endsWith(`.${domain}`);
+    });
+    if (aPreferred === bPreferred) return 0;
+    return aPreferred ? -1 : 1;
+  });
 }
 
 function toScore(value: unknown, fallback: number): number {
@@ -1189,7 +1264,9 @@ export async function POST(req: Request) {
           organizationNumber: baseCustomer?.organization ?? null,
           website: baseCustomer?.website ?? null,
           industry,
-          maxResults: 14
+          maxResults: 14,
+          blockedDomains: settings.blockedSourceDomains,
+          preferredDomains: settings.preferredSourceDomains
         });
         const mergedExtraInstructions = [settings.extraInstructions, body.extraInstructions]
           .map((value) => String(value ?? "").trim())
@@ -1282,7 +1359,10 @@ export async function POST(req: Request) {
           },
           filters: {
             scope,
-            exclude_distributors: true
+            exclude_distributors: true,
+            allowed_sources: Array.from(
+              new Set([...registryHintsForCountry(country), ...settings.registrySourceUrls, ...settings.preferredSourceDomains])
+            ).slice(0, 40)
           },
           additional_instructions: mergedExtraInstructions || null
         };
@@ -1405,7 +1485,9 @@ export async function POST(req: Request) {
         .map((value) => String(value ?? "").trim())
         .filter(Boolean)
         .join("\n\n");
-      const registryHints = registryHintsForCountry(country);
+      const registryHints = Array.from(
+        new Set([...registryHintsForCountry(country), ...settings.registrySourceUrls, ...settings.preferredSourceDomains])
+      ).slice(0, 40);
       const sniGroups = likelySniGroupFromIndustry(industry);
       const taskBasePrompt = body.basePrompt?.trim() || settings.similarCustomersPrompt;
       const similarResponseGuard =
@@ -1443,7 +1525,8 @@ export async function POST(req: Request) {
           prefer_same_country: true,
           disallow_directory_pages: true,
           prefer_official_registry_sources: true,
-          sni_or_equivalent_groups: sniGroups
+          sni_or_equivalent_groups: sniGroups,
+          blocked_domains: settings.blockedSourceDomains
         },
         filters: {
           scope,
@@ -1519,8 +1602,8 @@ export async function POST(req: Request) {
         }
       }
 
-      similarCustomers = hardFilterCompanyCandidates(similarCustomers);
-      similarCustomers = enforceCountryAndRegistryQuality(similarCustomers, country);
+      similarCustomers = hardFilterCompanyCandidates(similarCustomers, settings.blockedSourceDomains);
+      similarCustomers = enforceCountryAndRegistryQuality(similarCustomers, country, settings.blockedSourceDomains);
       similarCustomers = await validateCandidatesWithGemini(
         similarCustomers,
         { companyName, country, region, industry },
@@ -1578,7 +1661,8 @@ export async function POST(req: Request) {
             prefer_same_country: true,
             disallow_directory_pages: true,
             prefer_official_registry_sources: true,
-            sni_or_equivalent_groups: sniGroups
+            sni_or_equivalent_groups: sniGroups,
+            blocked_domains: settings.blockedSourceDomains
           },
           filters: {
             scope,
@@ -1608,8 +1692,8 @@ export async function POST(req: Request) {
           // keep previous aiResult and continue fallback chain
         }
 
-        similarCustomers = hardFilterCompanyCandidates(similarCustomers);
-        similarCustomers = enforceCountryAndRegistryQuality(similarCustomers, country);
+        similarCustomers = hardFilterCompanyCandidates(similarCustomers, settings.blockedSourceDomains);
+        similarCustomers = enforceCountryAndRegistryQuality(similarCustomers, country, settings.blockedSourceDomains);
       }
 
       // Do not show raw discovery rows directly as candidates.
@@ -1666,6 +1750,8 @@ export async function POST(req: Request) {
                 confidence: candidate.confidence || "low"
               })
             );
+            similarCustomers = hardFilterCompanyCandidates(similarCustomers, settings.blockedSourceDomains);
+            similarCustomers = enforceCountryAndRegistryQuality(similarCustomers, country, settings.blockedSourceDomains);
           }
         } catch {
           // keep previous result and surface status via aiError path above if present

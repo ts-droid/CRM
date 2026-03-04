@@ -15,6 +15,9 @@ export type SellerAssignments = Array<{
 export type ResearchConfig = {
   vendorWebsites: string[];
   brandWebsites: string[];
+  preferredSourceDomains: string[];
+  blockedSourceDomains: string[];
+  registrySourceUrls: string[];
   globalSystemPrompt: string;
   fullResearchPrompt: string;
   similarCustomersPrompt: string;
@@ -42,6 +45,37 @@ export type ResearchConfig = {
 export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://reseller.vendora.se", "https://www.vendora.se"],
   brandWebsites: [],
+  preferredSourceDomains: [
+    "allabolag.se",
+    "proff.se",
+    "finder.fi",
+    "proff.dk",
+    "proff.no",
+    "asiakastieto.fi",
+    "cv.ee",
+    "rekvizitai.lt",
+    "firmas.lv",
+    "linkedin.com",
+    "companyhouse.gov.uk"
+  ],
+  blockedSourceDomains: [
+    "glassdoor.com",
+    "clutch.co",
+    "rocketreach.co",
+    "wikipedia.org",
+    "yelp.com"
+  ],
+  registrySourceUrls: [
+    "https://www.allabolag.se",
+    "https://www.proff.se",
+    "https://www.asiakastieto.fi",
+    "https://www.finder.fi",
+    "https://virk.dk",
+    "https://www.brreg.no",
+    "https://ariregister.rik.ee",
+    "https://rekvizitai.vz.lt",
+    "https://company.lursoft.lv"
+  ],
   globalSystemPrompt:
     "You are an account intelligence and channel sales analyst for Vendora Nordic.\n\n" +
     "Rules:\n" +
@@ -246,6 +280,13 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
   return {
     vendorWebsites: uniqueTrimmed(value.vendorWebsites, 30),
     brandWebsites: uniqueTrimmed(value.brandWebsites, 60),
+    preferredSourceDomains: uniqueTrimmed(value.preferredSourceDomains, 120).map((domain) =>
+      String(domain).replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "").toLowerCase()
+    ),
+    blockedSourceDomains: uniqueTrimmed(value.blockedSourceDomains, 120).map((domain) =>
+      String(domain).replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "").toLowerCase()
+    ),
+    registrySourceUrls: uniqueTrimmed(value.registrySourceUrls, 120),
     globalSystemPrompt: String(value.globalSystemPrompt ?? "").trim(),
     fullResearchPrompt: String(value.fullResearchPrompt ?? value.researchBasePrompt ?? "").trim(),
     similarCustomersPrompt: String(
@@ -288,6 +329,13 @@ export async function getResearchConfig(): Promise<ResearchConfig> {
       ...DEFAULT_RESEARCH_CONFIG,
       ...normalized,
       vendorWebsites: normalized.vendorWebsites.length ? normalized.vendorWebsites : DEFAULT_RESEARCH_CONFIG.vendorWebsites,
+      preferredSourceDomains: normalized.preferredSourceDomains.length
+        ? normalized.preferredSourceDomains
+        : DEFAULT_RESEARCH_CONFIG.preferredSourceDomains,
+      blockedSourceDomains: normalized.blockedSourceDomains,
+      registrySourceUrls: normalized.registrySourceUrls.length
+        ? normalized.registrySourceUrls
+        : DEFAULT_RESEARCH_CONFIG.registrySourceUrls,
       globalSystemPrompt: normalized.globalSystemPrompt || DEFAULT_RESEARCH_CONFIG.globalSystemPrompt,
       fullResearchPrompt: normalized.fullResearchPrompt || DEFAULT_RESEARCH_CONFIG.fullResearchPrompt,
       similarCustomersPrompt: normalized.similarCustomersPrompt || DEFAULT_RESEARCH_CONFIG.similarCustomersPrompt,
@@ -311,6 +359,13 @@ export async function saveResearchConfig(input: unknown): Promise<ResearchConfig
     ...DEFAULT_RESEARCH_CONFIG,
     ...normalized,
     vendorWebsites: normalized.vendorWebsites.length ? normalized.vendorWebsites : DEFAULT_RESEARCH_CONFIG.vendorWebsites,
+    preferredSourceDomains: normalized.preferredSourceDomains.length
+      ? normalized.preferredSourceDomains
+      : DEFAULT_RESEARCH_CONFIG.preferredSourceDomains,
+    blockedSourceDomains: normalized.blockedSourceDomains,
+    registrySourceUrls: normalized.registrySourceUrls.length
+      ? normalized.registrySourceUrls
+      : DEFAULT_RESEARCH_CONFIG.registrySourceUrls,
     globalSystemPrompt: normalized.globalSystemPrompt || DEFAULT_RESEARCH_CONFIG.globalSystemPrompt,
     fullResearchPrompt: normalized.fullResearchPrompt || DEFAULT_RESEARCH_CONFIG.fullResearchPrompt,
     similarCustomersPrompt: normalized.similarCustomersPrompt || DEFAULT_RESEARCH_CONFIG.similarCustomersPrompt,
