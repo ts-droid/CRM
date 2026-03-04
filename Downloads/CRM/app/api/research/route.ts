@@ -72,6 +72,12 @@ type MinimalCustomer = {
   webshopSignals?: unknown;
 };
 
+type ExistingCustomerRef = {
+  id: string;
+  name: string;
+  domain: string;
+};
+
 function inferSegmentFocus(text: string): SegmentFocus {
   const normalized = text.toLowerCase();
   const b2bSignals = ["b2b", "enterprise", "business", "yritys", "pro", "corporate", "reseller"];
@@ -473,6 +479,40 @@ function websiteDomain(value: string | null | undefined): string {
   } catch {
     return "";
   }
+}
+
+async function loadExistingCustomerRefs(): Promise<{
+  refs: ExistingCustomerRef[];
+  domains: string[];
+  names: string[];
+}> {
+  const rows = await prisma.customer.findMany({
+    select: {
+      id: true,
+      name: true,
+      website: true
+    }
+  });
+  const refs: ExistingCustomerRef[] = [];
+  const seenDomains = new Set<string>();
+  const seenNames = new Set<string>();
+  for (const row of rows) {
+    const domain = websiteDomain(row.website);
+    const normalizedName = row.name.trim();
+    if (!normalizedName) continue;
+    refs.push({
+      id: row.id,
+      name: normalizedName,
+      domain
+    });
+    if (domain) seenDomains.add(domain);
+    seenNames.add(normalizedName);
+  }
+  return {
+    refs,
+    domains: Array.from(seenDomains),
+    names: Array.from(seenNames)
+  };
 }
 
 function pathLooksLikeContentPage(value: string | null | undefined): boolean {
@@ -1485,6 +1525,7 @@ export async function POST(req: Request) {
         .map((value) => String(value ?? "").trim())
         .filter(Boolean)
         .join("\n\n");
+      const existingCustomersContext = await loadExistingCustomerRefs();
       const registryHints = Array.from(
         new Set([...registryHintsForCountry(country), ...settings.registrySourceUrls, ...settings.preferredSourceDomains])
       ).slice(0, 40);
@@ -1520,6 +1561,10 @@ export async function POST(req: Request) {
           candidate_pool_list: [],
           web_discovery_allowed: true,
           allowed_sources: registryHints
+        },
+        crm_context: {
+          existing_customers: existingCustomersContext.names,
+          existing_customer_domains: existingCustomersContext.domains
         },
         legal_filters: {
           prefer_same_country: true,
@@ -1558,6 +1603,10 @@ export async function POST(req: Request) {
           candidate_pool_list: [],
           web_discovery_allowed: true,
           allowed_sources: registryHints
+        },
+        crm_context: {
+          existing_customers: existingCustomersContext.names,
+          existing_customer_domains: existingCustomersContext.domains
         },
         customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
         legal_filters: {
@@ -1656,6 +1705,10 @@ export async function POST(req: Request) {
           web_discovery_allowed: false,
           allowed_sources: registryHints
         },
+        crm_context: {
+          existing_customers: existingCustomersContext.names,
+          existing_customer_domains: existingCustomersContext.domains
+        },
         customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
         legal_filters: {
             prefer_same_country: true,
@@ -1732,6 +1785,10 @@ export async function POST(req: Request) {
             web_discovery_allowed: externalDiscovery.candidates.length === 0,
             allowed_sources: registryHints
           },
+          crm_context: {
+            existing_customers: existingCustomersContext.names,
+            existing_customer_domains: existingCustomersContext.domains
+          },
           customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
           filters: {
             scope,
@@ -1759,24 +1816,15 @@ export async function POST(req: Request) {
       }
 
       if (similarCustomers.length > 0) {
-        const crmCustomers = await prisma.customer.findMany({
-          select: {
-            id: true,
-            name: true,
-            website: true
-          }
-        });
-
         const crmByName = new Map<string, { id: string; name: string }>();
         const crmByDomain = new Map<string, { id: string; name: string }>();
-        for (const crm of crmCustomers) {
+        for (const crm of existingCustomersContext.refs) {
           const normalizedName = normalizeCompanyName(crm.name);
           if (normalizedName && !crmByName.has(normalizedName)) {
             crmByName.set(normalizedName, { id: crm.id, name: crm.name });
           }
-          const domain = websiteDomain(crm.website);
-          if (domain && !crmByDomain.has(domain)) {
-            crmByDomain.set(domain, { id: crm.id, name: crm.name });
+          if (crm.domain && !crmByDomain.has(crm.domain)) {
+            crmByDomain.set(crm.domain, { id: crm.id, name: crm.name });
           }
         }
 
@@ -1791,6 +1839,26 @@ export async function POST(req: Request) {
             existingCustomerName: match?.name ?? null
           };
         });
+
+        // Safety post-filter: always prioritize non-customers first even if model misses this preference.
+        similarCustomers = similarCustomers
+          .sort((a, b) => {
+            const aExisting = a.alreadyCustomer ? 1 : 0;
+            const bExisting = b.alreadyCustomer ? 1 : 0;
+            if (aExisting !== bExisting) return aExisting - bExisting;
+            const aScore = Number.isFinite(Number(a.totalScore))
+              ? Number(a.totalScore)
+              : Number.isFinite(Number(a.matchScore))
+              ? Number(a.matchScore)
+              : 0;
+            const bScore = Number.isFinite(Number(b.totalScore))
+              ? Number(b.totalScore)
+              : Number.isFinite(Number(b.matchScore))
+              ? Number(b.matchScore)
+              : 0;
+            return bScore - aScore;
+          })
+          .slice(0, maxSimilar);
       }
 
       return NextResponse.json({
