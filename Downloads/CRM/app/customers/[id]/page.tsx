@@ -31,8 +31,10 @@ type Customer = {
   plans: Array<{
     id: string;
     title: string;
+    description?: string | null;
     status: "PLANNED" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETED";
     priority?: "LOW" | "MEDIUM" | "HIGH";
+    startDate?: string | null;
     endDate?: string | null;
     owner: string | null;
   }>;
@@ -55,6 +57,9 @@ type Activity = {
   message: string;
   actorName: string | null;
   createdAt: string;
+  plan?: { id: string; title: string } | null;
+  contact?: { id: string; firstName: string; lastName: string } | null;
+  metadata?: unknown;
 };
 
 type SalesResponse = {
@@ -173,6 +178,17 @@ type ContactDraft = {
   department: string;
   title: string;
   notes: string;
+};
+
+type ModalPlanDraft = {
+  id: string;
+  title: string;
+  description: string;
+  owner: string;
+  status: "PLANNED" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETED";
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  startDate: string;
+  endDate: string;
 };
 
 type SimilarCustomer = {
@@ -364,6 +380,16 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [activitySaving, setActivitySaving] = useState(false);
   const [planSaving, setPlanSaving] = useState(false);
   const [planStatus, setPlanStatus] = useState("");
+  const [selectedPlanDraft, setSelectedPlanDraft] = useState<ModalPlanDraft | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [modalSaving, setModalSaving] = useState(false);
+  const [shareSaving, setShareSaving] = useState(false);
+  const [shareStatus, setShareStatus] = useState("");
+  const [shareSlack, setShareSlack] = useState(true);
+  const [shareEmail, setShareEmail] = useState(false);
+  const [shareRecipients, setShareRecipients] = useState("");
+  const [shareNote, setShareNote] = useState("");
+  const [activityFollowupText, setActivityFollowupText] = useState("");
   const [status, setStatus] = useState<string>("");
   const [contactStatus, setContactStatus] = useState<string>("");
   const [contactsSaving, setContactsSaving] = useState(false);
@@ -597,6 +623,145 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     return dir * (fitA - fitB);
   });
   const similarResearchSections = parseMarkdownSections(selectedSimilarResearch);
+
+  const planStatusLabel = (status: Customer["plans"][number]["status"]) =>
+    status === "PLANNED"
+      ? (lang === "sv" ? "Planerad" : "Planned")
+      : status === "IN_PROGRESS"
+      ? (lang === "sv" ? "Pågående" : "In progress")
+      : status === "ON_HOLD"
+      ? (lang === "sv" ? "Pausad" : "On hold")
+      : (lang === "sv" ? "Avslutad" : "Completed");
+
+  function closeItemModal() {
+    setSelectedPlanDraft(null);
+    setSelectedActivity(null);
+    setShareStatus("");
+    setShareNote("");
+    setActivityFollowupText("");
+  }
+
+  function openPlanModal(plan: Customer["plans"][number]) {
+    setSelectedActivity(null);
+    setShareStatus("");
+    setShareNote("");
+    setSelectedPlanDraft({
+      id: plan.id,
+      title: plan.title,
+      description: plan.description || "",
+      owner: plan.owner || "",
+      status: plan.status,
+      priority: (plan.priority || "MEDIUM") as "LOW" | "MEDIUM" | "HIGH",
+      startDate: plan.startDate ? plan.startDate.slice(0, 10) : "",
+      endDate: plan.endDate ? plan.endDate.slice(0, 10) : ""
+    });
+  }
+
+  function openActivityModal(activity: Activity) {
+    setSelectedPlanDraft(null);
+    setShareStatus("");
+    setShareNote("");
+    setSelectedActivity(activity);
+  }
+
+  async function savePlanFromModal() {
+    if (!selectedPlanDraft) return;
+    setModalSaving(true);
+    setShareStatus("");
+    try {
+      const res = await fetch(`/api/plans/${selectedPlanDraft.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: selectedPlanDraft.title.trim(),
+          description: selectedPlanDraft.description.trim() || null,
+          owner: selectedPlanDraft.owner.trim() || null,
+          status: selectedPlanDraft.status,
+          priority: selectedPlanDraft.priority,
+          startDate: selectedPlanDraft.startDate || null,
+          endDate: selectedPlanDraft.endDate || null
+        })
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte uppdatera plan." : "Could not update plan."));
+      }
+      setPlanStatus(lang === "sv" ? "Plan uppdaterad." : "Plan updated.");
+      await loadCustomer();
+      await loadActivities();
+      closeItemModal();
+    } catch (error) {
+      setShareStatus(error instanceof Error ? error.message : (lang === "sv" ? "Kunde inte uppdatera plan." : "Could not update plan."));
+    } finally {
+      setModalSaving(false);
+    }
+  }
+
+  async function shareCurrentItem() {
+    if (!selectedPlanDraft && !selectedActivity) return;
+    setShareSaving(true);
+    setShareStatus("");
+    try {
+      const payload = selectedPlanDraft
+        ? {
+            targetType: "plan" as const,
+            targetId: selectedPlanDraft.id,
+            channels: { slack: shareSlack, email: shareEmail },
+            recipients: shareRecipients.split(/[,\n]/).map((value) => value.trim()).filter(Boolean),
+            note: shareNote.trim() || undefined
+          }
+        : {
+            targetType: "activity" as const,
+            targetId: selectedActivity!.id,
+            channels: { slack: shareSlack, email: shareEmail },
+            recipients: shareRecipients.split(/[,\n]/).map((value) => value.trim()).filter(Boolean),
+            note: shareNote.trim() || undefined
+          };
+
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte dela." : "Could not share."));
+      }
+      setShareStatus(lang === "sv" ? "Delat." : "Shared.");
+      await loadActivities();
+    } catch (error) {
+      setShareStatus(error instanceof Error ? error.message : (lang === "sv" ? "Kunde inte dela." : "Could not share."));
+    } finally {
+      setShareSaving(false);
+    }
+  }
+
+  async function addActivityFollowupFromModal() {
+    if (!selectedActivity || !activityFollowupText.trim()) return;
+    setModalSaving(true);
+    setShareStatus("");
+    try {
+      const res = await fetch(`/api/customers/${params.id}/activities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `[Follow-up to ${selectedActivity.type}] ${activityFollowupText.trim()}`,
+          actorName: currentUserEmail || "CRM user"
+        })
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte spara uppföljning." : "Could not save follow-up."));
+      }
+      setActivityFollowupText("");
+      await loadActivities();
+      setShareStatus(lang === "sv" ? "Uppföljning sparad." : "Follow-up saved.");
+    } catch (error) {
+      setShareStatus(error instanceof Error ? error.message : (lang === "sv" ? "Kunde inte spara uppföljning." : "Could not save follow-up."));
+    } finally {
+      setModalSaving(false);
+    }
+  }
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1476,13 +1641,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             >
               <header className="crm-item-head">
                 <strong>
-                  {status === "PLANNED"
-                    ? (lang === "sv" ? "Planerad" : "Planned")
-                    : status === "IN_PROGRESS"
-                    ? (lang === "sv" ? "Pågående" : "In progress")
-                    : status === "ON_HOLD"
-                    ? (lang === "sv" ? "Pausad" : "On hold")
-                    : (lang === "sv" ? "Avslutad" : "Completed")}
+                  {planStatusLabel(status)}
                 </strong>
                 <span className="crm-badge">{customer.plans.filter((plan) => plan.status === status).length}</span>
               </header>
@@ -1494,6 +1653,15 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                       key={plan.id}
                       className="crm-item"
                       draggable
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openPlanModal(plan)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openPlanModal(plan);
+                        }
+                      }}
                       onDragStart={(event) => {
                         event.dataTransfer.setData("text/plain", plan.id);
                         event.dataTransfer.effectAllowed = "move";
@@ -1524,17 +1692,23 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <p className="crm-empty">{lang === "sv" ? "Inga planer registrerade." : "No plans registered."}</p>
           ) : (
             customer.plans.map((plan) => (
-              <article key={plan.id} className="crm-item">
+              <article
+                key={plan.id}
+                className="crm-item"
+                role="button"
+                tabIndex={0}
+                onClick={() => openPlanModal(plan)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openPlanModal(plan);
+                  }
+                }}
+              >
                 <div className="crm-item-head">
                   <strong>{plan.title}</strong>
                   <span className={`crm-badge ${planStatusClass[plan.status]}`}>
-                    {plan.status === "PLANNED"
-                      ? (lang === "sv" ? "Planerad" : "Planned")
-                      : plan.status === "IN_PROGRESS"
-                      ? (lang === "sv" ? "Pågående" : "In progress")
-                      : plan.status === "ON_HOLD"
-                      ? (lang === "sv" ? "Pausad" : "On hold")
-                      : (lang === "sv" ? "Avslutad" : "Completed")}
+                    {planStatusLabel(plan.status)}
                   </span>
                 </div>
                 <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
@@ -1573,7 +1747,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <p className="crm-empty">{lang === "sv" ? "Ingen aktivitet ännu." : "No activity yet."}</p>
           ) : (
             activities.map((item) => (
-              <article key={item.id} className="crm-item">
+              <article
+                key={item.id}
+                className="crm-item"
+                role="button"
+                tabIndex={0}
+                onClick={() => openActivityModal(item)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openActivityModal(item);
+                  }
+                }}
+              >
                 <div className="crm-item-head">
                   <strong>{item.type}</strong>
                   <span className="crm-badge">{new Date(item.createdAt).toLocaleString()}</span>
@@ -1587,6 +1773,157 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           )}
         </div>
       </section>
+      ) : null}
+
+      {selectedPlanDraft || selectedActivity ? (
+        <section className="crm-modal-backdrop" onClick={closeItemModal}>
+          <article className="crm-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="crm-item-head">
+              <h3 style={{ margin: 0 }}>
+                {selectedPlanDraft
+                  ? (lang === "sv" ? "Plan-detaljer" : "Plan details")
+                  : (lang === "sv" ? "Aktivitetsdetaljer" : "Activity details")}
+              </h3>
+              <button className="crm-button crm-button-secondary" type="button" onClick={closeItemModal}>
+                {lang === "sv" ? "Stäng" : "Close"}
+              </button>
+            </div>
+
+            {selectedPlanDraft ? (
+              <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                <input
+                  className="crm-input"
+                  value={selectedPlanDraft.title}
+                  onChange={(event) => setSelectedPlanDraft((prev) => (prev ? { ...prev, title: event.target.value } : prev))}
+                  placeholder={lang === "sv" ? "Titel" : "Title"}
+                />
+                <textarea
+                  className="crm-textarea"
+                  value={selectedPlanDraft.description}
+                  onChange={(event) => setSelectedPlanDraft((prev) => (prev ? { ...prev, description: event.target.value } : prev))}
+                  placeholder={lang === "sv" ? "Beskrivning" : "Description"}
+                />
+                <div className="crm-row">
+                  <select
+                    className="crm-select"
+                    value={selectedPlanDraft.owner}
+                    onChange={(event) => setSelectedPlanDraft((prev) => (prev ? { ...prev, owner: event.target.value } : prev))}
+                  >
+                    <option value="">{lang === "sv" ? "Ansvarig (valfritt)" : "Owner (optional)"}</option>
+                    {sellerOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    className="crm-select"
+                    value={selectedPlanDraft.status}
+                    onChange={(event) =>
+                      setSelectedPlanDraft((prev) =>
+                        prev ? { ...prev, status: event.target.value as ModalPlanDraft["status"] } : prev
+                      )
+                    }
+                  >
+                    <option value="PLANNED">{lang === "sv" ? "Planerad" : "Planned"}</option>
+                    <option value="IN_PROGRESS">{lang === "sv" ? "Pågående" : "In progress"}</option>
+                    <option value="ON_HOLD">{lang === "sv" ? "Pausad" : "On hold"}</option>
+                    <option value="COMPLETED">{lang === "sv" ? "Avslutad" : "Completed"}</option>
+                  </select>
+                  <select
+                    className="crm-select"
+                    value={selectedPlanDraft.priority}
+                    onChange={(event) =>
+                      setSelectedPlanDraft((prev) =>
+                        prev ? { ...prev, priority: event.target.value as ModalPlanDraft["priority"] } : prev
+                      )
+                    }
+                  >
+                    <option value="LOW">{lang === "sv" ? "Låg" : "Low"}</option>
+                    <option value="MEDIUM">{lang === "sv" ? "Medel" : "Medium"}</option>
+                    <option value="HIGH">{lang === "sv" ? "Hög" : "High"}</option>
+                  </select>
+                </div>
+                <div className="crm-row">
+                  <input
+                    className="crm-input"
+                    type="date"
+                    value={selectedPlanDraft.startDate}
+                    onChange={(event) => setSelectedPlanDraft((prev) => (prev ? { ...prev, startDate: event.target.value } : prev))}
+                  />
+                  <input
+                    className="crm-input"
+                    type="date"
+                    value={selectedPlanDraft.endDate}
+                    onChange={(event) => setSelectedPlanDraft((prev) => (prev ? { ...prev, endDate: event.target.value } : prev))}
+                  />
+                </div>
+                <div className="crm-row">
+                  <button className="crm-button" type="button" disabled={modalSaving} onClick={savePlanFromModal}>
+                    {modalSaving ? (lang === "sv" ? "Sparar..." : "Saving...") : (lang === "sv" ? "Spara och uppdatera pipeline" : "Save and update pipeline")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {selectedActivity ? (
+              <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                <article className="crm-item">
+                  <div className="crm-item-head">
+                    <strong>{selectedActivity.type}</strong>
+                    <span className="crm-badge">{new Date(selectedActivity.createdAt).toLocaleString()}</span>
+                  </div>
+                  <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>{selectedActivity.message}</p>
+                  <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
+                    {(lang === "sv" ? "Av" : "By")}: {selectedActivity.actorName || "-"}
+                  </p>
+                </article>
+                <textarea
+                  className="crm-textarea"
+                  value={activityFollowupText}
+                  onChange={(event) => setActivityFollowupText(event.target.value)}
+                  placeholder={lang === "sv" ? "Lägg till uppföljning till aktiviteten..." : "Add follow-up to this activity..."}
+                />
+                <button className="crm-button" type="button" disabled={modalSaving} onClick={addActivityFollowupFromModal}>
+                  {modalSaving ? (lang === "sv" ? "Sparar..." : "Saving...") : (lang === "sv" ? "Spara uppföljning" : "Save follow-up")}
+                </button>
+              </div>
+            ) : null}
+
+            <hr style={{ border: "none", borderTop: "1px solid var(--line)", margin: "1rem 0" }} />
+            <h4 style={{ margin: 0 }}>{lang === "sv" ? "Dela" : "Share"}</h4>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <label className="crm-check">
+                <input type="checkbox" checked={shareSlack} onChange={(event) => setShareSlack(event.target.checked)} />
+                <span>Slack</span>
+              </label>
+              <label className="crm-check">
+                <input type="checkbox" checked={shareEmail} onChange={(event) => setShareEmail(event.target.checked)} />
+                <span>{lang === "sv" ? "E-post" : "Email"}</span>
+              </label>
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                value={shareRecipients}
+                onChange={(event) => setShareRecipients(event.target.value)}
+                placeholder={lang === "sv" ? "E-postmottagare (en per rad eller kommaseparerat)" : "Email recipients (one per line or comma-separated)"}
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <textarea
+                className="crm-textarea"
+                value={shareNote}
+                onChange={(event) => setShareNote(event.target.value)}
+                placeholder={lang === "sv" ? "Meddelande till delningen (valfritt)" : "Share note (optional)"}
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <button className="crm-button crm-button-secondary" type="button" disabled={shareSaving} onClick={shareCurrentItem}>
+                {shareSaving ? (lang === "sv" ? "Delar..." : "Sharing...") : (lang === "sv" ? "Dela via Slack/Mail" : "Share via Slack/Email")}
+              </button>
+            </div>
+            {shareStatus ? <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>{shareStatus}</p> : null}
+          </article>
+        </section>
       ) : null}
 
       {customer.webshopSignals ? (

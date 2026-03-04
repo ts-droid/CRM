@@ -19,6 +19,16 @@ function todayKey(date = new Date()): string {
   return date.toISOString().slice(0, 10);
 }
 
+function startOfUtcDay(input: Date): Date {
+  return new Date(Date.UTC(input.getUTCFullYear(), input.getUTCMonth(), input.getUTCDate()));
+}
+
+function daysUntilDate(target: Date, now: Date): number {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const diff = startOfUtcDay(target).getTime() - startOfUtcDay(now).getTime();
+  return Math.round(diff / msPerDay);
+}
+
 async function getReminderState(): Promise<ReminderState> {
   const row = await prisma.appSetting.findUnique({ where: { key: REMINDER_STATE_KEY } });
   if (!row || typeof row.value !== "object" || !row.value) return { sentKeys: {} };
@@ -50,8 +60,10 @@ export async function runReminderSweep(): Promise<{
 
   const now = new Date();
   const dayKey = todayKey(now);
+  const reminderOffsets = Array.from(new Set([Math.max(1, config.reminderDaysBeforeDeadline), 1])).sort((a, b) => b - a);
+  const maxReminderOffset = Math.max(...reminderOffsets);
   const deadlineUntil = new Date(now);
-  deadlineUntil.setDate(deadlineUntil.getDate() + config.reminderDaysBeforeDeadline);
+  deadlineUntil.setDate(deadlineUntil.getDate() + maxReminderOffset);
 
   const openStatuses = [PlanStatus.PLANNED, PlanStatus.IN_PROGRESS, PlanStatus.ON_HOLD];
 
@@ -85,11 +97,18 @@ export async function runReminderSweep(): Promise<{
   const items: ReminderItem[] = [];
 
   for (const plan of duePlans) {
-    const key = `deadline:${plan.id}:${dayKey}`;
+    if (!plan.endDate) continue;
+    const daysUntil = daysUntilDate(plan.endDate, now);
+    if (!reminderOffsets.includes(daysUntil)) continue;
+    const key = `deadline:${plan.id}:${daysUntil}:${plan.endDate.toISOString().slice(0, 10)}`;
     const endDate = plan.endDate ? plan.endDate.toISOString().slice(0, 10) : "-";
+    const whenLabel =
+      daysUntil === 1
+        ? "1 day left"
+        : `${daysUntil} days left`;
     items.push({
       key,
-      line: `Plan deadline: ${plan.customer.name} · ${plan.title} · due ${endDate} · owner ${plan.owner || "-"}`
+      line: `Plan deadline (${whenLabel}): ${plan.customer.name} · ${plan.title} · due ${endDate} · owner ${plan.owner || "-"}`
     });
   }
 
