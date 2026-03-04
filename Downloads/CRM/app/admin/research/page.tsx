@@ -98,6 +98,13 @@ type ResearchConfig = {
   preferredSourceDomains: string[];
   blockedSourceDomains: string[];
   registrySourceUrls: string[];
+  pxwebBaseUrl: string;
+  pxwebSniTablePath: string;
+  pxwebSniVariable: string;
+  pxwebRegionVariable: string;
+  pxwebTimeVariable: string;
+  pxwebContentVariable: string;
+  pxwebDefaultContentCode: string;
   globalSystemPrompt: string;
   fullResearchPrompt: string;
   similarCustomersPrompt: string;
@@ -122,6 +129,24 @@ type ResearchConfig = {
   gmailReplyTo: string;
 };
 
+type SniStatsResponse = {
+  configured?: boolean;
+  error?: string;
+  tableTitle?: string;
+  selected?: {
+    sniCodes?: string[];
+    region?: string | null;
+    time?: string | null;
+    contentCode?: string | null;
+  };
+  rows?: Array<{
+    sniCode?: string;
+    value?: number | null;
+    rawValue?: string;
+    dimensions?: Record<string, string>;
+  }>;
+};
+
 type AdminUser = {
   id: string;
   email: string;
@@ -138,6 +163,13 @@ const EMPTY_CONFIG: ResearchConfig = {
   preferredSourceDomains: ["allabolag.se", "proff.se", "finder.fi", "asiakastieto.fi", "linkedin.com"],
   blockedSourceDomains: ["glassdoor.com", "clutch.co", "rocketreach.co", "yelp.com"],
   registrySourceUrls: ["https://www.allabolag.se", "https://www.proff.se", "https://www.asiakastieto.fi"],
+  pxwebBaseUrl: "",
+  pxwebSniTablePath: "",
+  pxwebSniVariable: "SNI2007",
+  pxwebRegionVariable: "Region",
+  pxwebTimeVariable: "Tid",
+  pxwebContentVariable: "ContentsCode",
+  pxwebDefaultContentCode: "",
   globalSystemPrompt:
     "You are an account intelligence and channel sales analyst for Vendora Nordic.\n" +
     "Output in English only. Be concise, practical, and evidence-based.\n" +
@@ -318,6 +350,12 @@ function ResearchAdminContent() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersStatus, setUsersStatus] = useState("");
   const [userSlackDrafts, setUserSlackDrafts] = useState<Record<string, string>>({});
+  const [sniCodesDraft, setSniCodesDraft] = useState("");
+  const [sniRegionDraft, setSniRegionDraft] = useState("");
+  const [sniTimeDraft, setSniTimeDraft] = useState("");
+  const [sniStatsLoading, setSniStatsLoading] = useState(false);
+  const [sniStatsError, setSniStatsError] = useState("");
+  const [sniStatsResult, setSniStatsResult] = useState<SniStatsResponse | null>(null);
 
   const labels = useMemo(
     () => ({
@@ -520,6 +558,43 @@ function ResearchAdminContent() {
     await conductResearch(websitesRaw);
   }
 
+  async function onSniLookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSniStatsLoading(true);
+    setSniStatsError("");
+    setSniStatsResult(null);
+
+    const codes = sniCodesDraft
+      .split(/[,\s]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (codes.length === 0) {
+      setSniStatsError(lang === "sv" ? "Ange minst en SNI-kod." : "Enter at least one SNI code.");
+      setSniStatsLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/stats/sni", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sniCodes: codes,
+          region: sniRegionDraft.trim() || null,
+          time: sniTimeDraft.trim() || null,
+          maxRows: 200
+        })
+      });
+      const data = (await res.json()) as SniStatsResponse;
+      if (!res.ok) throw new Error(data.error || "SNI lookup failed");
+      setSniStatsResult(data);
+    } catch (error) {
+      setSniStatsError(error instanceof Error ? error.message : "SNI lookup failed");
+    } finally {
+      setSniStatsLoading(false);
+    }
+  }
+
   useEffect(() => {
     const shouldAutoRun = searchParams.get("autorun") === "1";
     if (!shouldAutoRun) return;
@@ -592,6 +667,13 @@ function ResearchAdminContent() {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
+      pxwebBaseUrl: String(form.get("pxwebBaseUrl") ?? "").trim(),
+      pxwebSniTablePath: String(form.get("pxwebSniTablePath") ?? "").trim(),
+      pxwebSniVariable: String(form.get("pxwebSniVariable") ?? "SNI2007").trim(),
+      pxwebRegionVariable: String(form.get("pxwebRegionVariable") ?? "Region").trim(),
+      pxwebTimeVariable: String(form.get("pxwebTimeVariable") ?? "Tid").trim(),
+      pxwebContentVariable: String(form.get("pxwebContentVariable") ?? "ContentsCode").trim(),
+      pxwebDefaultContentCode: String(form.get("pxwebDefaultContentCode") ?? "").trim(),
       globalSystemPrompt: String(form.get("globalSystemPrompt") ?? "").trim(),
       fullResearchPrompt: String(form.get("fullResearchPrompt") ?? "").trim(),
       similarCustomersPrompt: String(form.get("similarCustomersPrompt") ?? "").trim(),
@@ -883,6 +965,72 @@ function ResearchAdminContent() {
               </button>
               {researchError ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.6rem" }}>{researchError}</p> : null}
             </form>
+          </section>
+
+          <section className="crm-card">
+            <h3>{lang === "sv" ? "Branschstatistik (SNI)" : "Industry statistics (SNI)"}</h3>
+            <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+              {lang === "sv"
+                ? "Sök på en eller flera SNI-koder och hämta statistik via PxWeb."
+                : "Lookup one or more SNI codes and fetch statistics via PxWeb."}
+            </p>
+            <form onSubmit={onSniLookup} style={{ marginTop: "0.7rem" }}>
+              <div className="crm-row">
+                <input
+                  className="crm-input"
+                  value={sniCodesDraft}
+                  onChange={(event) => setSniCodesDraft(event.target.value)}
+                  placeholder={lang === "sv" ? "SNI-koder (t.ex. 47430, 47540)" : "SNI codes (e.g. 47430, 47540)"}
+                />
+                <input
+                  className="crm-input"
+                  value={sniRegionDraft}
+                  onChange={(event) => setSniRegionDraft(event.target.value)}
+                  placeholder={lang === "sv" ? "Region (valfritt)" : "Region (optional)"}
+                />
+                <input
+                  className="crm-input"
+                  value={sniTimeDraft}
+                  onChange={(event) => setSniTimeDraft(event.target.value)}
+                  placeholder={lang === "sv" ? "Tid/År (valfritt)" : "Time/Year (optional)"}
+                />
+              </div>
+              <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={sniStatsLoading}>
+                {sniStatsLoading
+                  ? (lang === "sv" ? "Hämtar statistik..." : "Loading statistics...")
+                  : (lang === "sv" ? "Hämta SNI-statistik" : "Fetch SNI statistics")}
+              </button>
+              {sniStatsError ? (
+                <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.6rem" }}>
+                  {sniStatsError}
+                </p>
+              ) : null}
+            </form>
+            {sniStatsResult ? (
+              <div style={{ marginTop: "0.75rem" }}>
+                <p className="crm-subtle">
+                  {lang === "sv" ? "Tabell" : "Table"}: <strong>{sniStatsResult.tableTitle || "-"}</strong> ·{" "}
+                  {lang === "sv" ? "Träffar" : "Rows"}: <strong>{sniStatsResult.rows?.length ?? 0}</strong>
+                </p>
+                <div className="crm-list" style={{ marginTop: "0.5rem" }}>
+                  {(sniStatsResult.rows ?? []).slice(0, 50).map((row, index) => (
+                    <article className="crm-item" key={`${row.sniCode || "sni"}-${index}`}>
+                      <p>
+                        <strong>SNI:</strong> {row.sniCode || "-"} · <strong>{lang === "sv" ? "Värde" : "Value"}:</strong>{" "}
+                        {row.value ?? row.rawValue ?? "-"}
+                      </p>
+                      {row.dimensions ? (
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                          {Object.entries(row.dimensions)
+                            .map(([key, value]) => `${key}: ${value}`)
+                            .join(" · ")}
+                        </p>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </section>
 
           {result ? (
@@ -1369,6 +1517,56 @@ function ResearchAdminContent() {
                   name="registrySourceUrls"
                   defaultValue={config.registrySourceUrls.join("\n")}
                   placeholder="https://www.allabolag.se"
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  name="pxwebBaseUrl"
+                  defaultValue={config.pxwebBaseUrl}
+                  placeholder={lang === "sv" ? "PxWeb base URL (t.ex. https://api.scb.se/OV0104/v2beta/api/v1/sv)" : "PxWeb base URL (e.g. https://api.scb.se/OV0104/v2beta/api/v1/sv)"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  name="pxwebSniTablePath"
+                  defaultValue={config.pxwebSniTablePath}
+                  placeholder={lang === "sv" ? "PxWeb tabell-path för SNI (utan inledande /)" : "PxWeb SNI table path (without leading /)"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  name="pxwebSniVariable"
+                  defaultValue={config.pxwebSniVariable}
+                  placeholder={lang === "sv" ? "SNI-variabelkod (t.ex. SNI2007)" : "SNI variable code (e.g. SNI2007)"}
+                />
+                <input
+                  className="crm-input"
+                  name="pxwebRegionVariable"
+                  defaultValue={config.pxwebRegionVariable}
+                  placeholder={lang === "sv" ? "Region-variabelkod (t.ex. Region)" : "Region variable code (e.g. Region)"}
+                />
+                <input
+                  className="crm-input"
+                  name="pxwebTimeVariable"
+                  defaultValue={config.pxwebTimeVariable}
+                  placeholder={lang === "sv" ? "Tid-variabelkod (t.ex. Tid)" : "Time variable code (e.g. Tid)"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input
+                  className="crm-input"
+                  name="pxwebContentVariable"
+                  defaultValue={config.pxwebContentVariable}
+                  placeholder={lang === "sv" ? "Innehålls-variabelkod (t.ex. ContentsCode)" : "Content variable code (e.g. ContentsCode)"}
+                />
+                <input
+                  className="crm-input"
+                  name="pxwebDefaultContentCode"
+                  defaultValue={config.pxwebDefaultContentCode}
+                  placeholder={lang === "sv" ? "Default content-kod (valfri)" : "Default content code (optional)"}
                 />
               </div>
             </section>

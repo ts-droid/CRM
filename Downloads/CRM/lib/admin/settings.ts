@@ -18,6 +18,13 @@ export type ResearchConfig = {
   preferredSourceDomains: string[];
   blockedSourceDomains: string[];
   registrySourceUrls: string[];
+  pxwebBaseUrl: string;
+  pxwebSniTablePath: string;
+  pxwebSniVariable: string;
+  pxwebRegionVariable: string;
+  pxwebTimeVariable: string;
+  pxwebContentVariable: string;
+  pxwebDefaultContentCode: string;
   globalSystemPrompt: string;
   fullResearchPrompt: string;
   similarCustomersPrompt: string;
@@ -76,6 +83,13 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
     "https://rekvizitai.vz.lt",
     "https://company.lursoft.lv"
   ],
+  pxwebBaseUrl: "",
+  pxwebSniTablePath: "",
+  pxwebSniVariable: "SNI2007",
+  pxwebRegionVariable: "Region",
+  pxwebTimeVariable: "Tid",
+  pxwebContentVariable: "ContentsCode",
+  pxwebDefaultContentCode: "",
   globalSystemPrompt:
     "You are an account intelligence and channel sales analyst for Vendora Nordic.\n\n" +
     "Rules:\n" +
@@ -287,6 +301,13 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
       String(domain).replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "").toLowerCase()
     ),
     registrySourceUrls: uniqueTrimmed(value.registrySourceUrls, 120),
+    pxwebBaseUrl: String(value.pxwebBaseUrl ?? "").trim().replace(/\/+$/, ""),
+    pxwebSniTablePath: String(value.pxwebSniTablePath ?? "").trim().replace(/^\/+/, ""),
+    pxwebSniVariable: String(value.pxwebSniVariable ?? "SNI2007").trim(),
+    pxwebRegionVariable: String(value.pxwebRegionVariable ?? "Region").trim(),
+    pxwebTimeVariable: String(value.pxwebTimeVariable ?? "Tid").trim(),
+    pxwebContentVariable: String(value.pxwebContentVariable ?? "ContentsCode").trim(),
+    pxwebDefaultContentCode: String(value.pxwebDefaultContentCode ?? "").trim(),
     globalSystemPrompt: String(value.globalSystemPrompt ?? "").trim(),
     fullResearchPrompt: String(value.fullResearchPrompt ?? value.researchBasePrompt ?? "").trim(),
     similarCustomersPrompt: String(
