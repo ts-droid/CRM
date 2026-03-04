@@ -7,6 +7,8 @@ import { generateWithGemini } from "@/lib/research/llm";
 import { getResearchConfig } from "@/lib/admin/settings";
 import { discoverExternalSeeds } from "@/lib/research/discovery";
 
+const VENDORA_RESELLER_URL = "https://reseller.vendora.se";
+
 type Payload = {
   customerId?: string;
   companyName?: string;
@@ -139,10 +141,69 @@ function asStringArray(value: unknown): string[] {
   return asArray(value).map((item) => asString(item)).filter(Boolean);
 }
 
+function uniqueNormalizedUrls(urls: Array<string | null | undefined>, max = 20): string[] {
+  const out = new Set<string>();
+  for (const value of urls) {
+    const normalized = normalizeUrl(String(value ?? "").trim());
+    if (!normalized) continue;
+    out.add(normalized);
+    if (out.size >= max) break;
+  }
+  return Array.from(out);
+}
+
 function clampScore(value: unknown, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function isVendoraWebsite(url: string | null | undefined): boolean {
+  const host = websiteDomain(url);
+  return host === "vendora.se" || host.endsWith(".vendora.se");
+}
+
+function extractAssortmentTerms(text: string, max = 80): string[] {
+  const stopwords = new Set([
+    "with", "from", "that", "this", "your", "more", "into", "about", "for", "and", "the", "to", "our", "you", "are",
+    "som", "och", "det", "att", "med", "för", "till", "från", "hos", "på", "www", "http", "https", "com", "se", "app"
+  ]);
+  const terms = new Set<string>();
+  for (const word of text.toLowerCase().match(/[a-z0-9åäö\-]{4,}/g) ?? []) {
+    if (stopwords.has(word)) continue;
+    terms.add(word);
+    if (terms.size >= max) break;
+  }
+  return Array.from(terms);
+}
+
+function computeAssortmentFitScoreFromSnapshots(
+  customerSnapshots: Array<{ title?: string | null; description?: string | null; h1?: string | null; textSample?: string | null }>,
+  vendoraSnapshots: Array<{ title?: string | null; description?: string | null; h1?: string | null; textSample?: string | null }>
+): number | null {
+  const customerText = customerSnapshots
+    .map((snapshot) => [snapshot.title, snapshot.description, snapshot.h1, snapshot.textSample].filter(Boolean).join(" "))
+    .join(" ");
+  if (!customerText.trim()) return null;
+
+  const vendoraText = vendoraSnapshots
+    .map((snapshot) => [snapshot.title, snapshot.description, snapshot.h1, snapshot.textSample].filter(Boolean).join(" "))
+    .join(" ");
+  const vendoraFallback = [
+    "satechi", "alogic", "uag", "paperlike", "nomad", "twelve", "charging", "charger", "usb", "hub", "dock", "adapter",
+    "mobile", "iphone", "ipad", "mac", "smart", "home", "audio", "office", "accessories", "retail", "reseller"
+  ];
+  const vendoraTerms = new Set([...extractAssortmentTerms(vendoraText, 120), ...vendoraFallback]);
+  const customerTerms = new Set(extractAssortmentTerms(customerText, 180));
+  if (vendoraTerms.size === 0 || customerTerms.size === 0) return null;
+
+  let overlap = 0;
+  for (const term of customerTerms) {
+    if (vendoraTerms.has(term)) overlap += 1;
+  }
+  const ratio = overlap / Math.max(1, Math.min(vendoraTerms.size, customerTerms.size));
+  const boosted = Math.min(1, ratio * 1.7);
+  return clampScore(Math.round(boosted * 100), 50);
 }
 
 type StructuredResearchInsight = {
@@ -152,6 +213,7 @@ type StructuredResearchInsight = {
   verificationStatus: "Verified" | "Estimated" | "NeedsValidation";
   confidence: "High" | "Medium" | "Low";
   fitScore: number | null;
+  assortmentFitScore: number | null;
   potentialScore: number | null;
   totalScore: number | null;
   year1Potential: {
@@ -209,6 +271,11 @@ function parseStructuredResearchInsight(outputText: string): StructuredResearchI
   const segmentChannelProfile = asStringArray(summaryObj.segment_channel_profile);
   const commercialRelevance = asString(summaryObj.commercial_relevance_for_vendora);
   const fitScore = Number.isFinite(Number(scoreObj.fit_score)) ? clampScore(scoreObj.fit_score, 0) : null;
+  const assortmentFitScore = Number.isFinite(Number(scoreObj.assortment_fit_score))
+    ? clampScore(scoreObj.assortment_fit_score, 0)
+    : Number.isFinite(Number(scoreObj.assortmentFitScore))
+    ? clampScore(scoreObj.assortmentFitScore, 0)
+    : fitScore;
   const potentialScore = Number.isFinite(Number(scoreObj.potential_score)) ? clampScore(scoreObj.potential_score, 0) : null;
   const totalScore = Number.isFinite(Number(scoreObj.total_score)) ? clampScore(scoreObj.total_score, 0) : null;
 
@@ -219,6 +286,7 @@ function parseStructuredResearchInsight(outputText: string): StructuredResearchI
     verificationStatus: normalizeVerification(summaryObj.verification_status),
     confidence: normalizeConfidence(summaryObj.confidence || scoreObj.confidence),
     fitScore,
+    assortmentFitScore,
     potentialScore,
     totalScore,
     year1Potential: {
@@ -298,6 +366,7 @@ async function saveResearchInsightToCustomer(
       verificationStatus: insight.verificationStatus,
       confidence: insight.confidence,
       fitScore: insight.fitScore,
+      assortmentFitScore: insight.assortmentFitScore,
       potentialScore: insight.potentialScore,
       totalScore: insight.totalScore,
       year1Potential: insight.year1Potential,
@@ -896,13 +965,17 @@ export async function POST(req: Request) {
           .join(" ")
       );
 
+    const vendorCatalogWebsites = uniqueNormalizedUrls([
+      VENDORA_RESELLER_URL,
+      ...settings.vendorWebsites,
+      ...settings.brandWebsites
+    ], 20);
+
     const urlSet = new Set<string>();
     if (baseCustomer?.website) urlSet.add(normalizeUrl(baseCustomer.website));
-    if (!body.externalOnly) {
-      for (const website of [...settings.vendorWebsites, ...settings.brandWebsites]) {
-        if (website?.trim()) {
-          urlSet.add(normalizeUrl(website));
-        }
+    if (!body.externalOnly || body.externalMode === "profile") {
+      for (const website of vendorCatalogWebsites) {
+        urlSet.add(website);
       }
     }
     for (const website of body.websites ?? []) {
@@ -924,6 +997,8 @@ export async function POST(req: Request) {
         })
       )
     ).filter((item): item is NonNullable<typeof item> => Boolean(item));
+    const customerWebsiteSnapshots = websiteSnapshots.filter((snapshot) => !isVendoraWebsite(snapshot.url));
+    const vendoraWebsiteSnapshots = websiteSnapshots.filter((snapshot) => isVendoraWebsite(snapshot.url));
 
     let similarCustomers: SimilarCandidate[] = [];
 
@@ -948,10 +1023,10 @@ export async function POST(req: Request) {
           vendora: {
             countries_served: settings.countries,
             positioning: "Vendora Nordic channel distributor",
-            assortment_catalog: websites,
+            assortment_catalog: vendorCatalogWebsites,
             strategic_focus: settings.industries,
             constraints: [],
-            onboarding_link: settings.vendorWebsites[0] ?? null
+            onboarding_link: vendorCatalogWebsites[0] ?? null
           },
           research_inputs: {
             website_data: websiteSnapshots,
@@ -983,9 +1058,17 @@ export async function POST(req: Request) {
         }
 
         const structuredInsight = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+        const localAssortmentFitScore = computeAssortmentFitScoreFromSnapshots(
+          customerWebsiteSnapshots,
+          vendoraWebsiteSnapshots
+        );
+        const structuredWithFallback =
+          structuredInsight && structuredInsight.assortmentFitScore === null && localAssortmentFitScore !== null
+            ? { ...structuredInsight, assortmentFitScore: localAssortmentFitScore }
+            : structuredInsight;
         let savedInsight = null;
-        if (baseCustomer?.id && structuredInsight) {
-          savedInsight = await saveResearchInsightToCustomer(baseCustomer.id, structuredInsight, aiResult?.model ?? null);
+        if (baseCustomer?.id && structuredWithFallback) {
+          savedInsight = await saveResearchInsightToCustomer(baseCustomer.id, structuredWithFallback, aiResult?.model ?? null);
         }
 
         return NextResponse.json({
@@ -1003,7 +1086,8 @@ export async function POST(req: Request) {
           },
           websiteSnapshots,
           similarCustomers: [],
-          structuredInsight,
+          structuredInsight: structuredWithFallback,
+          localAssortmentFitScore,
           savedInsight,
           aiPrompt: finalPrompt,
           aiResult,
@@ -1041,7 +1125,7 @@ export async function POST(req: Request) {
         vendora: {
           countries_served: settings.countries,
           positioning: "Vendora Nordic channel distributor",
-          assortment_catalog: websites,
+          assortment_catalog: vendorCatalogWebsites,
           strategic_focus: settings.industries
         },
         discovery_inputs: {
@@ -1078,7 +1162,7 @@ export async function POST(req: Request) {
         vendora: {
           countries_served: settings.countries,
           positioning: "Vendora Nordic channel distributor",
-          assortment_catalog: websites,
+          assortment_catalog: vendorCatalogWebsites,
           strategic_focus: settings.industries
         },
         discovery_inputs: {
@@ -1175,7 +1259,7 @@ export async function POST(req: Request) {
           vendora: {
             countries_served: settings.countries,
             positioning: "Vendora Nordic channel distributor",
-            assortment_catalog: websites,
+            assortment_catalog: vendorCatalogWebsites,
             strategic_focus: settings.industries
           },
         discovery_inputs: {
@@ -1416,7 +1500,7 @@ export async function POST(req: Request) {
       vendora: {
         countries_served: settings.countries,
         positioning: "Vendora Nordic channel distributor",
-        assortment_catalog: websites,
+        assortment_catalog: vendorCatalogWebsites,
         strategic_focus: settings.industries,
         constraints: []
       },
@@ -1447,6 +1531,16 @@ export async function POST(req: Request) {
       aiError = "Gemini unavailable: missing GEMINI_API_KEY or model access.";
     }
 
+    const structuredInsight = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+    const localAssortmentFitScore = computeAssortmentFitScoreFromSnapshots(
+      customerWebsiteSnapshots,
+      vendoraWebsiteSnapshots
+    );
+    const structuredWithFallback =
+      structuredInsight && structuredInsight.assortmentFitScore === null && localAssortmentFitScore !== null
+        ? { ...structuredInsight, assortmentFitScore: localAssortmentFitScore }
+        : structuredInsight;
+
     return NextResponse.json({
       query: {
         customerId: baseCustomer?.id ?? null,
@@ -1460,7 +1554,8 @@ export async function POST(req: Request) {
       },
       websiteSnapshots,
       similarCustomers,
-      structuredInsight: aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null,
+      structuredInsight: structuredWithFallback,
+      localAssortmentFitScore,
       aiPrompt: finalPrompt,
       aiResult,
       aiError

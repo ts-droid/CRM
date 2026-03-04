@@ -40,6 +40,12 @@ type Customer = {
     title?: string;
     description?: string;
     syncedAt?: string;
+    research?: {
+      assortmentFitScore?: number | null;
+      fitScore?: number | null;
+      confidence?: string | null;
+      updatedAt?: string | null;
+    } | null;
   } | null;
 };
 
@@ -565,6 +571,12 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const savedAtText = customer
     ? new Date(customer.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "--:--";
+  const assortmentFitScore =
+    typeof customer?.webshopSignals?.research?.assortmentFitScore === "number"
+      ? customer.webshopSignals?.research?.assortmentFitScore
+      : typeof customer?.webshopSignals?.research?.fitScore === "number"
+      ? customer.webshopSignals?.research?.fitScore
+      : null;
   const similarAiSections = parseMarkdownSections(similarAiOutput);
   const lookalikeRows = parseLookalikeTable(similarAiOutput);
   const aiDrillNames = extractDrillCandidatesFromText(similarAiOutput, 24);
@@ -942,6 +954,10 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             </p>
             <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
               {lang === "sv" ? "Bransch" : "Industry"}: {customer.industry ?? "-"} · {lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}
+            </p>
+            <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+              {lang === "sv" ? "Sortimentsmatch (Vendora)" : "Assortment fit (Vendora)"}:{" "}
+              {typeof assortmentFitScore === "number" ? `${Math.round(assortmentFitScore)}/100` : "-"}
             </p>
             <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
               {lang === "sv" ? "Kontakter" : "Contacts"}: {customer.contacts.length} · {lang === "sv" ? "Planer" : "Plans"}: {customer.plans.length}

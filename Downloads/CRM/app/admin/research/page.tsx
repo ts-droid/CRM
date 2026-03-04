@@ -109,7 +109,7 @@ type ResearchConfig = {
 };
 
 const EMPTY_CONFIG: ResearchConfig = {
-  vendorWebsites: ["https://www.vendora.se"],
+  vendorWebsites: ["https://reseller.vendora.se", "https://www.vendora.se"],
   brandWebsites: [],
   globalSystemPrompt:
     "You are an account intelligence and channel sales analyst for Vendora Nordic.\n" +
