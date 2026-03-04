@@ -754,6 +754,15 @@ function ResearchAdminContent() {
         <>
           <section className="crm-card">
             <h3>{isProfileResearchMode ? (lang === "sv" ? "Research kund" : "Research customer") : (lang === "sv" ? "Research och AI-prompt" : "Research and AI prompt")}</h3>
+            {isProfileResearchMode ? (
+              <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+                {lang === "sv" ? "Vald kund" : "Selected customer"}:{" "}
+                <strong>{researchCompanyName.trim() || result?.query.companyName || "-"}</strong>
+                {" · "}
+                {lang === "sv" ? "Kund-ID" : "Customer ID"}:{" "}
+                <strong>{researchCustomerId.trim() || result?.query.customerId || "-"}</strong>
+              </p>
+            ) : null}
             <form onSubmit={onResearchSubmit} style={{ marginTop: "0.7rem" }}>
               {!isProfileResearchMode ? (
                 <>
