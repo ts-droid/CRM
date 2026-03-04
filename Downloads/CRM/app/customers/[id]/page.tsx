@@ -1201,7 +1201,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   href={`/admin/research?tab=research&mode=profile&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}&autorun=1`}
                   className="crm-button crm-button-secondary"
                 >
-                  {lang === "sv" ? "Öppna research för kund" : "Open research for customer"}
+                  {lang === "sv" ? "Research kund" : "Research customer"}
                 </Link>
               </div>
               <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>

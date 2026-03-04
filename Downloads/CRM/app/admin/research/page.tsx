@@ -299,6 +299,7 @@ function ResearchAdminContent() {
   const aiText = result?.aiResult?.outputText ?? "";
   const aiBullets = useMemo(() => extractBullets(aiText), [aiText]);
   const aiSections = useMemo(() => parseMarkdownSections(aiText), [aiText]);
+  const isProfileResearchMode = researchRunMode === "profile";
 
   async function loadSettings() {
     try {
@@ -652,75 +653,79 @@ function ResearchAdminContent() {
       {tab === "research" ? (
         <>
           <section className="crm-card">
-            <h3>{lang === "sv" ? "Research och AI-prompt" : "Research and AI prompt"}</h3>
+            <h3>{isProfileResearchMode ? (lang === "sv" ? "Research kund" : "Research customer") : (lang === "sv" ? "Research och AI-prompt" : "Research and AI prompt")}</h3>
             <form onSubmit={onResearchSubmit} style={{ marginTop: "0.7rem" }}>
-              <div className="crm-row">
-                <input
-                  className="crm-input"
-                  name="customerId"
-                  value={researchCustomerId}
-                  onChange={(event) => setResearchCustomerId(event.target.value)}
-                  placeholder={lang === "sv" ? "Kund-ID (valfritt)" : "Customer ID (optional)"}
-                />
-                <input
-                  className="crm-input"
-                  name="companyName"
-                  value={researchCompanyName}
-                  onChange={(event) => setResearchCompanyName(event.target.value)}
-                  placeholder={lang === "sv" ? "Bolagsnamn (om inget kund-ID)" : "Company name (if no customer ID)"}
-                />
-                <select className="crm-select" name="scope" value={researchScope} onChange={(event) => setResearchScope(event.target.value === "country" ? "country" : "region")}>
-                  <option value="region">{lang === "sv" ? "Liknande på region" : "Similar by region"}</option>
-                  <option value="country">{lang === "sv" ? "Liknande på land" : "Similar by country"}</option>
-                </select>
-                <select
-                  className="crm-select"
-                  name="runMode"
-                  value={researchRunMode}
-                  onChange={(event) => setResearchRunMode(event.target.value === "similar" ? "similar" : "profile")}
-                >
-                  <option value="profile">{lang === "sv" ? "Läge: Djupanalys av kund" : "Mode: Deep customer profile"}</option>
-                  <option value="similar">{lang === "sv" ? "Läge: Hitta liknande kunder" : "Mode: Find similar customers"}</option>
-                </select>
-                <select
-                  className="crm-select"
-                  name="segmentFocus"
-                  value={researchSegmentFocus}
-                  onChange={(event) =>
-                    setResearchSegmentFocus(
-                      event.target.value === "B2B" || event.target.value === "B2C" || event.target.value === "MIXED"
-                        ? event.target.value
-                        : "AUTO"
-                    )
-                  }
-                >
-                  <option value="AUTO">{lang === "sv" ? "Segment: Auto från kund" : "Segment: Auto from customer"}</option>
-                  <option value="B2B">Segment: B2B</option>
-                  <option value="B2C">Segment: B2C</option>
-                  <option value="MIXED">{lang === "sv" ? "Segment: Mixad" : "Segment: Mixed"}</option>
-                </select>
-              </div>
+              {!isProfileResearchMode ? (
+                <>
+                  <div className="crm-row">
+                    <input
+                      className="crm-input"
+                      name="customerId"
+                      value={researchCustomerId}
+                      onChange={(event) => setResearchCustomerId(event.target.value)}
+                      placeholder={lang === "sv" ? "Kund-ID (valfritt)" : "Customer ID (optional)"}
+                    />
+                    <input
+                      className="crm-input"
+                      name="companyName"
+                      value={researchCompanyName}
+                      onChange={(event) => setResearchCompanyName(event.target.value)}
+                      placeholder={lang === "sv" ? "Bolagsnamn (om inget kund-ID)" : "Company name (if no customer ID)"}
+                    />
+                    <select className="crm-select" name="scope" value={researchScope} onChange={(event) => setResearchScope(event.target.value === "country" ? "country" : "region")}>
+                      <option value="region">{lang === "sv" ? "Liknande på region" : "Similar by region"}</option>
+                      <option value="country">{lang === "sv" ? "Liknande på land" : "Similar by country"}</option>
+                    </select>
+                    <select
+                      className="crm-select"
+                      name="runMode"
+                      value={researchRunMode}
+                      onChange={(event) => setResearchRunMode(event.target.value === "similar" ? "similar" : "profile")}
+                    >
+                      <option value="profile">{lang === "sv" ? "Läge: Djupanalys av kund" : "Mode: Deep customer profile"}</option>
+                      <option value="similar">{lang === "sv" ? "Läge: Hitta liknande kunder" : "Mode: Find similar customers"}</option>
+                    </select>
+                    <select
+                      className="crm-select"
+                      name="segmentFocus"
+                      value={researchSegmentFocus}
+                      onChange={(event) =>
+                        setResearchSegmentFocus(
+                          event.target.value === "B2B" || event.target.value === "B2C" || event.target.value === "MIXED"
+                            ? event.target.value
+                            : "AUTO"
+                        )
+                      }
+                    >
+                      <option value="AUTO">{lang === "sv" ? "Segment: Auto från kund" : "Segment: Auto from customer"}</option>
+                      <option value="B2B">Segment: B2B</option>
+                      <option value="B2C">Segment: B2C</option>
+                      <option value="MIXED">{lang === "sv" ? "Segment: Mixad" : "Segment: Mixed"}</option>
+                    </select>
+                  </div>
 
-              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-                <textarea className="crm-textarea" name="websites" placeholder={lang === "sv" ? "Extra webbkällor, en URL per rad" : "Extra website sources, one URL per line"} />
-              </div>
-              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-                <textarea
-                  className="crm-textarea"
-                  value={researchBasePromptDraft}
-                  onChange={(event) => setResearchBasePromptDraft(event.target.value)}
-                  placeholder={lang === "sv" ? "Grundprompt för denna körning" : "Base prompt for this run"}
-                />
-              </div>
-              <div className="crm-row" style={{ marginTop: "0.4rem" }}>
-                <button
-                  className="crm-button crm-button-secondary"
-                  type="button"
-                  onClick={() => setResearchBasePromptDraft(config.fullResearchPrompt)}
-                >
-                  {lang === "sv" ? "Återställ grundprompt" : "Reset base prompt"}
-                </button>
-              </div>
+                  <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                    <textarea className="crm-textarea" name="websites" placeholder={lang === "sv" ? "Extra webbkällor, en URL per rad" : "Extra website sources, one URL per line"} />
+                  </div>
+                  <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                    <textarea
+                      className="crm-textarea"
+                      value={researchBasePromptDraft}
+                      onChange={(event) => setResearchBasePromptDraft(event.target.value)}
+                      placeholder={lang === "sv" ? "Grundprompt för denna körning" : "Base prompt for this run"}
+                    />
+                  </div>
+                  <div className="crm-row" style={{ marginTop: "0.4rem" }}>
+                    <button
+                      className="crm-button crm-button-secondary"
+                      type="button"
+                      onClick={() => setResearchBasePromptDraft(config.fullResearchPrompt)}
+                    >
+                      {lang === "sv" ? "Återställ grundprompt" : "Reset base prompt"}
+                    </button>
+                  </div>
+                </>
+              ) : null}
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <textarea
                   className="crm-textarea"
@@ -733,15 +738,17 @@ function ResearchAdminContent() {
                   }
                 />
               </div>
-              <div className="crm-row" style={{ marginTop: "0.4rem" }}>
-                <button
-                  className="crm-button crm-button-secondary"
-                  type="button"
-                  onClick={() => setResearchExtraInstructionsDraft(config.extraInstructions)}
-                >
-                  {lang === "sv" ? "Återställ extra instruktioner" : "Reset extra instructions"}
-                </button>
-              </div>
+              {!isProfileResearchMode ? (
+                <div className="crm-row" style={{ marginTop: "0.4rem" }}>
+                  <button
+                    className="crm-button crm-button-secondary"
+                    type="button"
+                    onClick={() => setResearchExtraInstructionsDraft(config.extraInstructions)}
+                  >
+                    {lang === "sv" ? "Återställ extra instruktioner" : "Reset extra instructions"}
+                  </button>
+                </div>
+              ) : null}
 
               <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={researchLoading}>
                 {researchLoading ? (lang === "sv" ? "Analyserar..." : "Analyzing...") : (lang === "sv" ? "Genomför research" : "Conduct research")}
@@ -752,155 +759,213 @@ function ResearchAdminContent() {
 
           {result ? (
             <>
-              <section className="crm-card">
-                <h3>{lang === "sv" ? "Researchsammanfattning" : "Research summary"}</h3>
-                <div className="crm-grid" style={{ marginTop: "0.7rem" }}>
-                  <article className="crm-item">
-                    <p className="crm-subtle">{lang === "sv" ? "Bolag" : "Company"}</p>
-                    <strong>{result.query.companyName}</strong>
-                  </article>
-                  <article className="crm-item">
-                    <p className="crm-subtle">{lang === "sv" ? "Scope" : "Scope"}</p>
-                    <strong>{result.query.scope === "region" ? (lang === "sv" ? "Region" : "Region") : (lang === "sv" ? "Land" : "Country")}</strong>
-                  </article>
-                  <article className="crm-item">
-                    <p className="crm-subtle">{lang === "sv" ? "Segmentfokus" : "Segment focus"}</p>
-                    <strong>{result.query.segmentFocus ?? "MIXED"}</strong>
-                  </article>
-                  <article className="crm-item">
-                    <p className="crm-subtle">{lang === "sv" ? "Liknande bolag" : "Similar companies"}</p>
-                    <strong>{result.similarCustomers.length}</strong>
-                  </article>
-                  <article className="crm-item">
-                    <p className="crm-subtle">{lang === "sv" ? "Datakällor" : "Data sources"}</p>
-                    <strong>{result.websiteSnapshots.length}</strong>
-                  </article>
-                </div>
-              </section>
-
-              <section className="crm-card">
-                <h3>{lang === "sv" ? "Liknande bolag" : "Similar companies"}</h3>
-                <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-                  {result.similarCustomers.map((item, index) => (
-                    <article key={item.id} className="crm-item">
-                      <div className="crm-item-head">
-                        <strong>{index + 1}. {item.name}</strong>
-                        <span className="crm-badge">Match {item.matchScore}</span>
-                      </div>
-                      <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
-                        Potential: {item.potentialScore}
-                      </p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-
-              <section className="crm-card">
-                <h3>{lang === "sv" ? "Källor och signaler" : "Sources and signals"}</h3>
-                <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-                  {result.websiteSnapshots.length === 0 ? (
-                    <p className="crm-empty">{lang === "sv" ? "Inga webbkällor hittades." : "No web sources found."}</p>
-                  ) : (
-                    result.websiteSnapshots.map((item) => (
-                      <article key={item.url} className="crm-item">
-                        <div className="crm-item-head">
-                          <a href={item.url} target="_blank" rel="noreferrer" className="crm-link-inline">{item.title || item.url}</a>
-                          <span className="crm-badge">{lang === "sv" ? "Fit" : "Fit"}: {item.vendoraFitScore}</span>
-                        </div>
-                        <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>{item.url}</p>
-                      </article>
-                    ))
-                  )}
-                </div>
-              </section>
-
-              <section className="crm-card">
-                <h3>{lang === "sv" ? "AI-rekommendationer" : "AI recommendations"}</h3>
-                {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318" }}>{result.aiError}</p> : null}
-                {result.structuredInsight ? (
-                  <div className="crm-list" style={{ marginTop: "0.6rem" }}>
-                    <article className="crm-item">
-                      <p><strong>{lang === "sv" ? "Sammanfattning" : "Summary"}:</strong> {result.structuredInsight.summary || "-"}</p>
-                      <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                        Fit: {result.structuredInsight.fitScore ?? "-"} · Potential: {result.structuredInsight.potentialScore ?? "-"} · Total: {result.structuredInsight.totalScore ?? "-"} · {lang === "sv" ? "Säkerhet" : "Confidence"}: {result.structuredInsight.confidence ?? "-"}
-                      </p>
-                      <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                        Y1: {result.structuredInsight.year1Potential?.low || "-"} / {result.structuredInsight.year1Potential?.base || "-"} / {result.structuredInsight.year1Potential?.high || "-"} {result.structuredInsight.year1Potential?.currency || ""}
-                      </p>
-                      {result.savedInsight ? (
+              {isProfileResearchMode ? (
+                <section className="crm-card">
+                  <h3>{lang === "sv" ? "Kundanalys" : "Customer analysis"}</h3>
+                  {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.5rem" }}>{result.aiError}</p> : null}
+                  {result.structuredInsight ? (
+                    <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                      <article className="crm-item">
+                        <p><strong>{lang === "sv" ? "Sammanfattning" : "Summary"}:</strong> {result.structuredInsight.summary || "-"}</p>
                         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          {lang === "sv" ? "Sparat på kund" : "Saved on customer"} · Potential: {result.savedInsight.potentialScore} · {new Date(result.savedInsight.updatedAt).toLocaleString()}
+                          Fit: {result.structuredInsight.fitScore ?? "-"} · Potential: {result.structuredInsight.potentialScore ?? "-"} · Total: {result.structuredInsight.totalScore ?? "-"} · {lang === "sv" ? "Säkerhet" : "Confidence"}: {result.structuredInsight.confidence ?? "-"}
                         </p>
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                          Y1: {result.structuredInsight.year1Potential?.low || "-"} / {result.structuredInsight.year1Potential?.base || "-"} / {result.structuredInsight.year1Potential?.high || "-"} {result.structuredInsight.year1Potential?.currency || ""}
+                        </p>
+                        {result.savedInsight ? (
+                          <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                            {lang === "sv" ? "Sparat på kund" : "Saved on customer"} · Potential: {result.savedInsight.potentialScore} · {new Date(result.savedInsight.updatedAt).toLocaleString()}
+                          </p>
+                        ) : null}
+                      </article>
+                      {Array.isArray(result.structuredInsight.categoriesToPitch) && result.structuredInsight.categoriesToPitch.length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Prioriterade produktområden" : "Priority product areas"}</h4>
+                          <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                            {result.structuredInsight.categoriesToPitch.slice(0, 10).map((item, index) => (
+                              <li key={`${item.categoryOrBrand || "item"}-${index}`}>
+                                <strong>{item.categoryOrBrand || "-"}</strong>
+                                {item.whyItFits ? ` - ${item.whyItFits}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </article>
                       ) : null}
-                    </article>
-                    {Array.isArray(result.structuredInsight.categoriesToPitch) && result.structuredInsight.categoriesToPitch.length > 0 ? (
-                      <article className="crm-item">
-                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Prioriterade produktområden" : "Priority product areas"}</h4>
-                        <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
-                          {result.structuredInsight.categoriesToPitch.slice(0, 10).map((item, index) => (
-                            <li key={`${item.categoryOrBrand || "item"}-${index}`}>
-                              <strong>{item.categoryOrBrand || "-"}</strong>
-                              {item.whyItFits ? ` - ${item.whyItFits}` : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      </article>
-                    ) : null}
-                    {Array.isArray(result.structuredInsight.nextBestActions) && result.structuredInsight.nextBestActions.length > 0 ? (
-                      <article className="crm-item">
-                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Nästa steg" : "Next steps"}</h4>
-                        <ol style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
-                          {result.structuredInsight.nextBestActions.slice(0, 8).map((step, index) => (
-                            <li key={`${step}-${index}`}>{step}</li>
-                          ))}
-                        </ol>
-                      </article>
-                    ) : null}
-                  </div>
-                ) : null}
-                {aiBullets.length > 0 ? (
-                  <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-                    {aiBullets.map((bullet, index) => (
-                      <article key={`${bullet}-${index}`} className="crm-item">
-                        <p>{index + 1}. {bullet}</p>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
-                    {lang === "sv" ? "Ingen strukturerad rekommendation hittades, se full AI-output nedan." : "No structured recommendation found, see full AI output below."}
-                  </p>
-                )}
-              </section>
-
-              <section className="crm-card">
-                <h3>AI Prompt</h3>
-                <pre className="crm-pre">{result.aiPrompt}</pre>
-              </section>
-
-              <section className="crm-card">
-                <h3>{lang === "sv" ? "Gemini-svar" : "Gemini output"}</h3>
-                {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318" }}>{result.aiError}</p> : null}
-                {result.aiResult?.outputText ? (
-                  <>
-                    <p className="crm-subtle">{result.aiResult.provider} · {result.aiResult.model}</p>
-                    {aiSections.length > 0 ? (
-                      <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-                        {aiSections.map((section) => (
+                      {Array.isArray(result.structuredInsight.nextBestActions) && result.structuredInsight.nextBestActions.length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Nästa steg" : "Next steps"}</h4>
+                          <ol style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                            {result.structuredInsight.nextBestActions.slice(0, 10).map((step, index) => (
+                              <li key={`${step}-${index}`}>{step}</li>
+                            ))}
+                          </ol>
+                        </article>
+                      ) : null}
+                      {result.aiResult?.outputText ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Fördjupad analys" : "Detailed analysis"}</h4>
+                          {aiSections.length > 0 ? (
+                            <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                              {aiSections.map((section) => (
+                                <article key={section.title} className="crm-item">
+                                  <h5 style={{ margin: 0 }}>{section.title}</h5>
+                                  <pre className="crm-pre" style={{ marginTop: "0.4rem" }}>{section.body}</pre>
+                                </article>
+                              ))}
+                            </div>
+                          ) : (
+                            <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{result.aiResult.outputText}</pre>
+                          )}
+                        </article>
+                      ) : null}
+                    </div>
+                  ) : result.aiResult?.outputText ? (
+                    <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                      {aiSections.length > 0 ? (
+                        aiSections.map((section) => (
                           <article key={section.title} className="crm-item">
                             <h4 style={{ margin: 0 }}>{section.title}</h4>
-                            <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{section.body}</pre>
+                            <pre className="crm-pre" style={{ marginTop: "0.4rem" }}>{section.body}</pre>
+                          </article>
+                        ))
+                      ) : (
+                        <article className="crm-item">
+                          <pre className="crm-pre">{result.aiResult.outputText}</pre>
+                        </article>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
+                      {lang === "sv" ? "Ingen analys tillgänglig ännu." : "No analysis available yet."}
+                    </p>
+                  )}
+                </section>
+              ) : (
+                <>
+                  <section className="crm-card">
+                    <h3>{lang === "sv" ? "Researchsammanfattning" : "Research summary"}</h3>
+                    <div className="crm-grid" style={{ marginTop: "0.7rem" }}>
+                      <article className="crm-item">
+                        <p className="crm-subtle">{lang === "sv" ? "Bolag" : "Company"}</p>
+                        <strong>{result.query.companyName}</strong>
+                      </article>
+                      <article className="crm-item">
+                        <p className="crm-subtle">{lang === "sv" ? "Scope" : "Scope"}</p>
+                        <strong>{result.query.scope === "region" ? (lang === "sv" ? "Region" : "Region") : (lang === "sv" ? "Land" : "Country")}</strong>
+                      </article>
+                      <article className="crm-item">
+                        <p className="crm-subtle">{lang === "sv" ? "Segmentfokus" : "Segment focus"}</p>
+                        <strong>{result.query.segmentFocus ?? "MIXED"}</strong>
+                      </article>
+                      <article className="crm-item">
+                        <p className="crm-subtle">{lang === "sv" ? "Liknande bolag" : "Similar companies"}</p>
+                        <strong>{result.similarCustomers.length}</strong>
+                      </article>
+                      <article className="crm-item">
+                        <p className="crm-subtle">{lang === "sv" ? "Datakällor" : "Data sources"}</p>
+                        <strong>{result.websiteSnapshots.length}</strong>
+                      </article>
+                    </div>
+                  </section>
+
+                  <section className="crm-card">
+                    <h3>{lang === "sv" ? "Liknande bolag" : "Similar companies"}</h3>
+                    <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                      {result.similarCustomers.map((item, index) => (
+                        <article key={item.id} className="crm-item">
+                          <div className="crm-item-head">
+                            <strong>{index + 1}. {item.name}</strong>
+                            <span className="crm-badge">Match {item.matchScore}</span>
+                          </div>
+                          <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+                            Potential: {item.potentialScore}
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="crm-card">
+                    <h3>{lang === "sv" ? "Källor och signaler" : "Sources and signals"}</h3>
+                    <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                      {result.websiteSnapshots.length === 0 ? (
+                        <p className="crm-empty">{lang === "sv" ? "Inga webbkällor hittades." : "No web sources found."}</p>
+                      ) : (
+                        result.websiteSnapshots.map((item) => (
+                          <article key={item.url} className="crm-item">
+                            <div className="crm-item-head">
+                              <a href={item.url} target="_blank" rel="noreferrer" className="crm-link-inline">{item.title || item.url}</a>
+                              <span className="crm-badge">{lang === "sv" ? "Fit" : "Fit"}: {item.vendoraFitScore}</span>
+                            </div>
+                            <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>{item.url}</p>
+                          </article>
+                        ))
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="crm-card">
+                    <h3>{lang === "sv" ? "AI-rekommendationer" : "AI recommendations"}</h3>
+                    {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318" }}>{result.aiError}</p> : null}
+                    {result.structuredInsight ? (
+                      <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                        <article className="crm-item">
+                          <p><strong>{lang === "sv" ? "Sammanfattning" : "Summary"}:</strong> {result.structuredInsight.summary || "-"}</p>
+                          <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                            Fit: {result.structuredInsight.fitScore ?? "-"} · Potential: {result.structuredInsight.potentialScore ?? "-"} · Total: {result.structuredInsight.totalScore ?? "-"} · {lang === "sv" ? "Säkerhet" : "Confidence"}: {result.structuredInsight.confidence ?? "-"}
+                          </p>
+                          <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                            Y1: {result.structuredInsight.year1Potential?.low || "-"} / {result.structuredInsight.year1Potential?.base || "-"} / {result.structuredInsight.year1Potential?.high || "-"} {result.structuredInsight.year1Potential?.currency || ""}
+                          </p>
+                        </article>
+                      </div>
+                    ) : null}
+                    {aiBullets.length > 0 ? (
+                      <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                        {aiBullets.map((bullet, index) => (
+                          <article key={`${bullet}-${index}`} className="crm-item">
+                            <p>{index + 1}. {bullet}</p>
                           </article>
                         ))}
                       </div>
                     ) : (
-                      <pre className="crm-pre">{result.aiResult.outputText}</pre>
+                      <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
+                        {lang === "sv" ? "Ingen strukturerad rekommendation hittades, se full AI-output nedan." : "No structured recommendation found, see full AI output below."}
+                      </p>
                     )}
-                  </>
-                ) : (
-                  <p className="crm-subtle">{lang === "sv" ? "Ingen LLM-output ännu." : "No LLM output yet."}</p>
-                )}
-              </section>
+                  </section>
+
+                  <section className="crm-card">
+                    <h3>AI Prompt</h3>
+                    <pre className="crm-pre">{result.aiPrompt}</pre>
+                  </section>
+
+                  <section className="crm-card">
+                    <h3>{lang === "sv" ? "Gemini-svar" : "Gemini output"}</h3>
+                    {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318" }}>{result.aiError}</p> : null}
+                    {result.aiResult?.outputText ? (
+                      <>
+                        <p className="crm-subtle">{result.aiResult.provider} · {result.aiResult.model}</p>
+                        {aiSections.length > 0 ? (
+                          <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                            {aiSections.map((section) => (
+                              <article key={section.title} className="crm-item">
+                                <h4 style={{ margin: 0 }}>{section.title}</h4>
+                                <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{section.body}</pre>
+                              </article>
+                            ))}
+                          </div>
+                        ) : (
+                          <pre className="crm-pre">{result.aiResult.outputText}</pre>
+                        )}
+                      </>
+                    ) : (
+                      <p className="crm-subtle">{lang === "sv" ? "Ingen LLM-output ännu." : "No LLM output yet."}</p>
+                    )}
+                  </section>
+                </>
+              )}
             </>
           ) : null}
         </>
