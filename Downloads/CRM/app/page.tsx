@@ -14,6 +14,14 @@ type Customer = {
   potentialScore: number;
 };
 
+type CustomerListResponse = {
+  items: Customer[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
 type Stats = {
   customers: number;
   contacts: number;
@@ -29,6 +37,14 @@ export default function HomePage() {
   const [seller, setSeller] = useState("");
   const [defaultSellerApplied, setDefaultSellerApplied] = useState(false);
   const [sort, setSort] = useState("potential");
+  const [queryInput, setQueryInput] = useState("");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 15;
+  const [totalRows, setTotalRows] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [facetCountries, setFacetCountries] = useState<string[]>([]);
+  const [facetSellers, setFacetSellers] = useState<string[]>([]);
   const { t, lang } = useI18n();
 
   async function loadStats() {
@@ -44,13 +60,36 @@ export default function HomePage() {
   async function loadCustomers() {
     const params = new URLSearchParams();
     params.set("sort", sort);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    if (query) params.set("q", query);
     if (country) params.set("country", country);
     if (seller) params.set("seller", seller);
 
     const res = await fetch(`/api/customers?${params.toString()}`, { cache: "no-store" });
     if (!res.ok) return;
 
-    setRows((await res.json()) as Customer[]);
+    const data = (await res.json()) as CustomerListResponse | Customer[];
+    if (Array.isArray(data)) {
+      setRows(data);
+      setTotalRows(data.length);
+      setTotalPages(Math.max(1, Math.ceil(data.length / pageSize)));
+      return;
+    }
+    setRows(data.items);
+    setTotalRows(data.total);
+    setTotalPages(data.totalPages);
+  }
+
+  async function loadFacets() {
+    const params = new URLSearchParams();
+    params.set("facets", "1");
+    if (query) params.set("q", query);
+    const res = await fetch(`/api/customers?${params.toString()}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const data = (await res.json()) as { countries?: string[]; sellers?: string[] };
+    setFacetCountries(Array.isArray(data.countries) ? data.countries : []);
+    setFacetSellers(Array.isArray(data.sellers) ? data.sellers : []);
   }
 
   useEffect(() => {
@@ -77,16 +116,28 @@ export default function HomePage() {
   }, [defaultSellerApplied, seller]);
 
   useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setQuery(queryInput.trim());
+      setPage(1);
+    }, 220);
+    return () => clearTimeout(timeoutId);
+  }, [queryInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [country, seller, sort, query]);
+
+  useEffect(() => {
     loadCustomers();
-  }, [country, seller, sort]);
+  }, [country, seller, sort, page, query]);
 
-  const countries = useMemo(() => {
-    return Array.from(new Set(rows.map((row) => row.country).filter(Boolean))).sort() as string[];
-  }, [rows]);
+  useEffect(() => {
+    loadFacets();
+  }, [query]);
 
-  const sellers = useMemo(() => {
-    return Array.from(new Set(rows.map((row) => row.seller).filter(Boolean))).sort() as string[];
-  }, [rows]);
+  const countries = useMemo(() => facetCountries, [facetCountries]);
+
+  const sellers = useMemo(() => facetSellers, [facetSellers]);
 
   return (
     <>
@@ -126,6 +177,12 @@ export default function HomePage() {
         </div>
 
         <div className="crm-row" style={{ marginTop: "0.7rem" }}>
+          <input
+            className="crm-input"
+            value={queryInput}
+            onChange={(event) => setQueryInput(event.target.value)}
+            placeholder={lang === "sv" ? "Sök globalt i kunder, kontakter, planer, aktiviteter..." : "Live search across customers, contacts, plans, activities..."}
+          />
           <select className="crm-select" value={country} onChange={(event) => setCountry(event.target.value)}>
             <option value="">{lang === "sv" ? "Alla länder" : "All countries"}</option>
             {countries.map((item) => (
@@ -146,7 +203,7 @@ export default function HomePage() {
         </div>
 
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-          {rows.slice(0, 12).map((customer) => (
+          {rows.map((customer) => (
             <Link
               key={customer.id}
               href={`/customers/${customer.id}`}
@@ -165,6 +222,36 @@ export default function HomePage() {
               </article>
             </Link>
           ))}
+          {rows.length === 0 ? (
+            <article className="crm-item">
+              <p className="crm-subtle">
+                {lang === "sv" ? "Inga kunder matchar din sökning." : "No customers matched your search."}
+              </p>
+            </article>
+          ) : null}
+        </div>
+        <div className="crm-row" style={{ marginTop: "0.7rem", justifyContent: "space-between", alignItems: "center" }}>
+          <p className="crm-subtle">
+            {lang === "sv"
+              ? `Visar ${(page - 1) * pageSize + (rows.length > 0 ? 1 : 0)}-${(page - 1) * pageSize + rows.length} av ${totalRows}`
+              : `Showing ${(page - 1) * pageSize + (rows.length > 0 ? 1 : 0)}-${(page - 1) * pageSize + rows.length} of ${totalRows}`}
+          </p>
+          <div className="crm-row">
+            <button className="crm-button crm-button-secondary" type="button" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>
+              {lang === "sv" ? "Föregående" : "Previous"}
+            </button>
+            <span className="crm-subtle" style={{ alignSelf: "center" }}>
+              {page} / {Math.max(1, totalPages)}
+            </span>
+            <button
+              className="crm-button crm-button-secondary"
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+            >
+              {lang === "sv" ? "Nästa" : "Next"}
+            </button>
+          </div>
         </div>
       </section>
 

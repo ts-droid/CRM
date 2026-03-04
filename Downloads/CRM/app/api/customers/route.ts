@@ -14,6 +14,12 @@ export async function GET(req: Request) {
   const potentialMin = potentialMinRaw && potentialMinRaw.trim() !== "" ? Number(potentialMinRaw) : Number.NaN;
   const potentialMax = potentialMaxRaw && potentialMaxRaw.trim() !== "" ? Number(potentialMaxRaw) : Number.NaN;
   const sort = searchParams.get("sort");
+  const facetsOnly = searchParams.get("facets") === "1";
+  const pageRaw = searchParams.get("page");
+  const pageSizeRaw = searchParams.get("pageSize");
+  const page = pageRaw && pageRaw.trim() !== "" ? Number(pageRaw) : Number.NaN;
+  const pageSize = pageSizeRaw && pageSizeRaw.trim() !== "" ? Number(pageSizeRaw) : Number.NaN;
+  const usePagination = Number.isFinite(page) && Number.isFinite(pageSize) && Number(page) > 0 && Number(pageSize) > 0;
 
   const where = {
     ...(country ? { country } : {}),
@@ -23,7 +29,49 @@ export async function GET(req: Request) {
       ? {
           OR: [
             { name: { contains: q, mode: "insensitive" as const } },
-            { organization: { contains: q, mode: "insensitive" as const } }
+            { organization: { contains: q, mode: "insensitive" as const } },
+            { industry: { contains: q, mode: "insensitive" as const } },
+            { country: { contains: q, mode: "insensitive" as const } },
+            { region: { contains: q, mode: "insensitive" as const } },
+            { seller: { contains: q, mode: "insensitive" as const } },
+            { website: { contains: q, mode: "insensitive" as const } },
+            { email: { contains: q, mode: "insensitive" as const } },
+            { phone: { contains: q, mode: "insensitive" as const } },
+            { notes: { contains: q, mode: "insensitive" as const } },
+            {
+              contacts: {
+                some: {
+                  OR: [
+                    { firstName: { contains: q, mode: "insensitive" as const } },
+                    { lastName: { contains: q, mode: "insensitive" as const } },
+                    { email: { contains: q, mode: "insensitive" as const } },
+                    { phone: { contains: q, mode: "insensitive" as const } },
+                    { department: { contains: q, mode: "insensitive" as const } },
+                    { title: { contains: q, mode: "insensitive" as const } },
+                    { role: { contains: q, mode: "insensitive" as const } },
+                    { notes: { contains: q, mode: "insensitive" as const } }
+                  ]
+                }
+              }
+            },
+            {
+              plans: {
+                some: {
+                  OR: [
+                    { title: { contains: q, mode: "insensitive" as const } },
+                    { description: { contains: q, mode: "insensitive" as const } },
+                    { owner: { contains: q, mode: "insensitive" as const } }
+                  ]
+                }
+              }
+            },
+            {
+              activities: {
+                some: {
+                  message: { contains: q, mode: "insensitive" as const }
+                }
+              }
+            }
           ]
         }
       : {}),
@@ -48,7 +96,73 @@ export async function GET(req: Request) {
       ? [{ updatedAt: "desc" as const }]
       : [{ createdAt: "desc" as const }];
 
+  if (facetsOnly) {
+    const whereForFacets = {
+      ...(industry ? { industry } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" as const } },
+              { organization: { contains: q, mode: "insensitive" as const } },
+              { industry: { contains: q, mode: "insensitive" as const } },
+              { country: { contains: q, mode: "insensitive" as const } },
+              { region: { contains: q, mode: "insensitive" as const } },
+              { seller: { contains: q, mode: "insensitive" as const } },
+              { website: { contains: q, mode: "insensitive" as const } },
+              { email: { contains: q, mode: "insensitive" as const } },
+              { phone: { contains: q, mode: "insensitive" as const } },
+              { notes: { contains: q, mode: "insensitive" as const } }
+            ]
+          }
+        : {}),
+      ...(!Number.isNaN(potentialMin) || !Number.isNaN(potentialMax)
+        ? {
+            potentialScore: {
+              ...(Number.isNaN(potentialMin) ? {} : { gte: potentialMin }),
+              ...(Number.isNaN(potentialMax) ? {} : { lte: potentialMax })
+            }
+          }
+        : {})
+    };
+    const rows = await prisma.customer.findMany({
+      where: whereForFacets,
+      select: {
+        country: true,
+        seller: true
+      }
+    });
+    const countries = Array.from(new Set(rows.map((row) => row.country).filter(Boolean))).sort();
+    const sellers = Array.from(new Set(rows.map((row) => row.seller).filter(Boolean))).sort();
+    return NextResponse.json({ countries, sellers });
+  }
+
   try {
+    if (usePagination) {
+      const boundedPageSize = Math.max(1, Math.min(100, Math.round(pageSize)));
+      const boundedPage = Math.max(1, Math.round(page));
+      const [total, customers] = await Promise.all([
+        prisma.customer.count({ where }),
+        prisma.customer.findMany({
+          where,
+          include: {
+            contacts: true,
+            plans: true
+          },
+          orderBy,
+          skip: (boundedPage - 1) * boundedPageSize,
+          take: boundedPageSize
+        })
+      ]);
+      const totalPages = Math.max(1, Math.ceil(total / boundedPageSize));
+      return NextResponse.json({
+        items: customers,
+        total,
+        page: boundedPage,
+        pageSize: boundedPageSize,
+        totalPages
+      });
+    }
+
     const customers = await prisma.customer.findMany({
       where,
       include: {
@@ -60,6 +174,28 @@ export async function GET(req: Request) {
 
     return NextResponse.json(customers);
   } catch {
+    if (usePagination) {
+      const boundedPageSize = Math.max(1, Math.min(100, Math.round(pageSize)));
+      const boundedPage = Math.max(1, Math.round(page));
+      const [total, customers] = await Promise.all([
+        prisma.customer.count({ where }),
+        prisma.customer.findMany({
+          where,
+          orderBy,
+          skip: (boundedPage - 1) * boundedPageSize,
+          take: boundedPageSize
+        })
+      ]);
+      const totalPages = Math.max(1, Math.ceil(total / boundedPageSize));
+      return NextResponse.json({
+        items: customers,
+        total,
+        page: boundedPage,
+        pageSize: boundedPageSize,
+        totalPages
+      });
+    }
+
     const customers = await prisma.customer.findMany({
       where,
       orderBy
