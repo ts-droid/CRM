@@ -8,15 +8,22 @@ import { useI18n } from "@/components/i18n";
 export function Header() {
   const { lang, setLang, t } = useI18n();
   const [userEmail, setUserEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) return null;
-        return (await res.json()) as { email?: string };
+        return (await res.json()) as { email?: string; isAdmin?: boolean };
       })
-      .then((data) => setUserEmail(data?.email || ""))
-      .catch(() => setUserEmail(""));
+      .then((data) => {
+        setUserEmail(data?.email || "");
+        setIsAdmin(Boolean(data?.isAdmin));
+      })
+      .catch(() => {
+        setUserEmail("");
+        setIsAdmin(false);
+      });
   }, []);
 
   async function logout() {
@@ -36,7 +43,7 @@ export function Header() {
         </div>
 
         <div className="crm-header-controls">
-          <Nav />
+          <Nav isAdmin={isAdmin} />
           {userEmail ? (
             <div className="crm-user">
               <span className="crm-subtle">{userEmail}</span>

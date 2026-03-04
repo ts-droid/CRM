@@ -17,6 +17,13 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySession(token) : null;
   if (session?.email) {
+    if (pathname === "/research") {
+      const rewrittenUrl = req.nextUrl.clone();
+      rewrittenUrl.pathname = "/admin/research";
+      rewrittenUrl.searchParams.set("tab", "research");
+      return NextResponse.rewrite(rewrittenUrl);
+    }
+
     const adminPath = pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
     if (!adminPath) return NextResponse.next();
 

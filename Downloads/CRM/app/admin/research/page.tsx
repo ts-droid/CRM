@@ -267,6 +267,8 @@ function parseRegionsByCountry(text: string): ResearchConfig["regionsByCountry"]
 function ResearchAdminContent() {
   const { lang } = useI18n();
   const searchParams = useSearchParams();
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  const adminMode = isAdminUser;
   const [tab, setTab] = useState<TabKey>("research");
   const [researchCustomerId, setResearchCustomerId] = useState("");
   const [researchCompanyName, setResearchCompanyName] = useState("");
@@ -327,7 +329,18 @@ function ResearchAdminContent() {
   }
 
   useEffect(() => {
+    if (!isAdminUser) return;
     loadSettings();
+  }, [isAdminUser]);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as { isAdmin?: boolean };
+      })
+      .then((data) => setIsAdminUser(Boolean(data?.isAdmin)))
+      .catch(() => setIsAdminUser(false));
   }, []);
 
   async function loadAdminUsers() {
@@ -393,7 +406,7 @@ function ResearchAdminContent() {
 
   useEffect(() => {
     const tabParam = searchParams.get("tab");
-    if (tabParam === "import-export" || tabParam === "research" || tabParam === "settings") {
+    if (adminMode && (tabParam === "import-export" || tabParam === "research" || tabParam === "settings")) {
       setTab(tabParam);
     }
 
@@ -430,6 +443,7 @@ function ResearchAdminContent() {
       }
     }
   }, [
+    adminMode,
     searchParams,
     config.defaultScope,
     config.followupCustomerClickPrompt,
@@ -675,21 +689,27 @@ function ResearchAdminContent() {
   return (
     <div className="crm-section">
       <section className="crm-card">
-        <h2>{lang === "sv" ? "Admin" : "Admin"}</h2>
+        <h2>{adminMode ? (lang === "sv" ? "Admin" : "Admin") : (lang === "sv" ? "Research" : "Research")}</h2>
         <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
-          {lang === "sv"
-            ? "Hantera CSV, research och AI-inställningar i ett arbetsflöde."
-            : "Manage CSV, research and AI settings in one workflow."}
+          {adminMode
+            ? (lang === "sv"
+              ? "Hantera CSV, research och AI-inställningar i ett arbetsflöde."
+              : "Manage CSV, research and AI settings in one workflow.")
+            : (lang === "sv"
+              ? "Kör research och kundanalys."
+              : "Run research and customer analysis.")}
         </p>
 
-        <div className="crm-row" style={{ marginTop: "0.8rem" }}>
-          <button className={`crm-tab ${tab === "import-export" ? "active" : ""}`} type="button" onClick={() => setTab("import-export")}>{labels.importExport}</button>
-          <button className={`crm-tab ${tab === "research" ? "active" : ""}`} type="button" onClick={() => setTab("research")}>{labels.research}</button>
-          <button className={`crm-tab ${tab === "settings" ? "active" : ""}`} type="button" onClick={() => setTab("settings")}>{labels.settings}</button>
-        </div>
+        {adminMode ? (
+          <div className="crm-row" style={{ marginTop: "0.8rem" }}>
+            <button className={`crm-tab ${tab === "import-export" ? "active" : ""}`} type="button" onClick={() => setTab("import-export")}>{labels.importExport}</button>
+            <button className={`crm-tab ${tab === "research" ? "active" : ""}`} type="button" onClick={() => setTab("research")}>{labels.research}</button>
+            <button className={`crm-tab ${tab === "settings" ? "active" : ""}`} type="button" onClick={() => setTab("settings")}>{labels.settings}</button>
+          </div>
+        ) : null}
       </section>
 
-      {tab === "import-export" ? (
+      {adminMode && tab === "import-export" ? (
         <section className="crm-card">
           <h3>{labels.importExport}</h3>
           <p className="crm-subtle" style={{ marginTop: "0.4rem" }}>
@@ -713,7 +733,7 @@ function ResearchAdminContent() {
         </section>
       ) : null}
 
-      {tab === "research" ? (
+      {(tab === "research" || !adminMode) ? (
         <>
           <section className="crm-card">
             <h3>{isProfileResearchMode ? (lang === "sv" ? "Research kund" : "Research customer") : (lang === "sv" ? "Research och AI-prompt" : "Research and AI prompt")}</h3>
@@ -770,23 +790,27 @@ function ResearchAdminContent() {
                   <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                     <textarea className="crm-textarea" name="websites" placeholder={lang === "sv" ? "Extra webbkällor, en URL per rad" : "Extra website sources, one URL per line"} />
                   </div>
-                  <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-                    <textarea
-                      className="crm-textarea"
-                      value={researchBasePromptDraft}
-                      onChange={(event) => setResearchBasePromptDraft(event.target.value)}
-                      placeholder={lang === "sv" ? "Grundprompt för denna körning" : "Base prompt for this run"}
-                    />
-                  </div>
-                  <div className="crm-row" style={{ marginTop: "0.4rem" }}>
-                    <button
-                      className="crm-button crm-button-secondary"
-                      type="button"
-                      onClick={() => setResearchBasePromptDraft(config.fullResearchPrompt)}
-                    >
-                      {lang === "sv" ? "Återställ grundprompt" : "Reset base prompt"}
-                    </button>
-                  </div>
+                  {adminMode ? (
+                    <>
+                      <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                        <textarea
+                          className="crm-textarea"
+                          value={researchBasePromptDraft}
+                          onChange={(event) => setResearchBasePromptDraft(event.target.value)}
+                          placeholder={lang === "sv" ? "Grundprompt för denna körning" : "Base prompt for this run"}
+                        />
+                      </div>
+                      <div className="crm-row" style={{ marginTop: "0.4rem" }}>
+                        <button
+                          className="crm-button crm-button-secondary"
+                          type="button"
+                          onClick={() => setResearchBasePromptDraft(config.fullResearchPrompt)}
+                        >
+                          {lang === "sv" ? "Återställ grundprompt" : "Reset base prompt"}
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
                 </>
               ) : null}
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
@@ -1034,7 +1058,7 @@ function ResearchAdminContent() {
         </>
       ) : null}
 
-      {tab === "settings" ? (
+      {adminMode && tab === "settings" ? (
         <section className="crm-card">
           <h3>{labels.settings}</h3>
           <p className="crm-subtle" style={{ marginTop: "0.4rem" }}>

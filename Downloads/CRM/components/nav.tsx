@@ -4,21 +4,29 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/components/i18n";
 
-const LINKS = [
+const BASE_LINKS = [
   { href: "/", key: "navOverview" },
   { href: "/customers", key: "navCustomers" },
   { href: "/contacts", key: "navContacts" },
   { href: "/plans", key: "navPlans" },
-  { href: "/admin/research", key: "navAdmin" }
 ] as const;
 
-export function Nav() {
+type NavProps = {
+  isAdmin: boolean;
+};
+
+export function Nav({ isAdmin }: NavProps) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const links = [
+    ...BASE_LINKS,
+    { href: "/research", key: "navResearch" as const },
+    ...(isAdmin ? [{ href: "/admin/research", key: "navAdmin" as const }] : [])
+  ];
 
   return (
     <nav className="crm-nav" aria-label="Main navigation">
-      {LINKS.map((link) => {
+      {links.map((link) => {
         const isActive = pathname === link.href;
         return (
           <Link key={link.href} href={link.href} className={`crm-nav-link${isActive ? " active" : ""}`}>
