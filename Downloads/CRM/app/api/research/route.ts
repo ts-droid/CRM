@@ -51,6 +51,13 @@ type SimilarCandidate = {
   existingCustomerId?: string | null;
   existingCustomerName?: string | null;
 };
+
+type CompanySignal = {
+  title: string;
+  url: string;
+  snippet: string;
+  sourceType: "serper" | "tavily";
+};
 type MinimalCustomer = {
   id: string;
   name: string;
@@ -822,6 +829,177 @@ function buildTaskPrompt(taskPrompt: string, inputPayload: Record<string, unknow
   return `${task}\n\nINPUT JSON\n${inputJson}`;
 }
 
+function toDomain(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    return url.hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeSearchUrl(raw: string): string {
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+  try {
+    const url = new URL(value.startsWith("http") ? value : `https://${value}`);
+    return `${url.protocol}//${url.hostname}${url.pathname}`.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+async function fetchSerperCompanySignals(query: string, maxResults: number): Promise<CompanySignal[]> {
+  const apiKey = process.env.SERPER_API_KEY?.trim();
+  if (!apiKey) return [];
+
+  const response = await fetch("https://google.serper.dev/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-KEY": apiKey
+    },
+    body: JSON.stringify({
+      q: query,
+      num: Math.min(10, Math.max(4, maxResults))
+    }),
+    cache: "no-store"
+  });
+  if (!response.ok) return [];
+
+  const data = (await response.json()) as {
+    organic?: Array<{
+      title?: string;
+      link?: string;
+      snippet?: string;
+    }>;
+  };
+
+  return (Array.isArray(data.organic) ? data.organic : [])
+    .map((row): CompanySignal | null => {
+      const url = normalizeSearchUrl(String(row.link ?? ""));
+      if (!url) return null;
+      return {
+        title: String(row.title ?? "").trim(),
+        url,
+        snippet: String(row.snippet ?? "").trim().slice(0, 400),
+        sourceType: "serper"
+      };
+    })
+    .filter((row): row is CompanySignal => Boolean(row));
+}
+
+async function fetchTavilyCompanySignals(query: string, maxResults: number): Promise<CompanySignal[]> {
+  const apiKey = process.env.TAVILY_API_KEY?.trim();
+  if (!apiKey) return [];
+
+  const response = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      api_key: apiKey,
+      query,
+      max_results: Math.min(8, Math.max(4, maxResults)),
+      search_depth: "advanced"
+    }),
+    cache: "no-store"
+  });
+  if (!response.ok) return [];
+
+  const data = (await response.json()) as {
+    results?: Array<{ title?: string; url?: string; content?: string }>;
+  };
+
+  return (Array.isArray(data.results) ? data.results : [])
+    .map((row): CompanySignal | null => {
+      const url = normalizeSearchUrl(String(row.url ?? ""));
+      if (!url) return null;
+      return {
+        title: String(row.title ?? "").trim(),
+        url,
+        snippet: String(row.content ?? "").trim().slice(0, 400),
+        sourceType: "tavily"
+      };
+    })
+    .filter((row): row is CompanySignal => Boolean(row));
+}
+
+async function discoverCompanySignals(input: {
+  companyName: string;
+  country?: string | null;
+  region?: string | null;
+  organizationNumber?: string | null;
+  website?: string | null;
+  industry?: string | null;
+  maxResults?: number;
+}): Promise<CompanySignal[]> {
+  const maxResults = Math.min(20, Math.max(8, input.maxResults ?? 12));
+  const countryToken = (input.country || "").trim();
+  const regionToken = (input.region || "").trim();
+  const orgToken = (input.organizationNumber || "").trim();
+  const industryToken = (input.industry || "").trim();
+  const websiteDomain = toDomain(input.website);
+
+  const queries = [
+    `"${input.companyName}" ${countryToken} ${regionToken} official website`,
+    `"${input.companyName}" ${countryToken} ${regionToken} omzet turnover revenue employees`,
+    `"${input.companyName}" ${countryToken} ${orgToken} bolagsverket allabolag proff`,
+    `"${input.companyName}" ${countryToken} ${industryToken} e-commerce retailer`
+  ]
+    .map((query) => query.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 4);
+
+  const all = (
+    await Promise.all(
+      queries.map(async (query) => {
+        const [serper, tavily] = await Promise.all([
+          fetchSerperCompanySignals(query, maxResults),
+          fetchTavilyCompanySignals(query, maxResults)
+        ]);
+        return [...serper, ...tavily];
+      })
+    )
+  ).flat();
+
+  const seen = new Set<string>();
+  const filtered: CompanySignal[] = [];
+  const companyNameNeedle = normalizeCompanyName(input.companyName);
+
+  for (const signal of all) {
+    const normalizedUrl = normalizeSearchUrl(signal.url);
+    if (!normalizedUrl) continue;
+    const key = `${signal.sourceType}:${normalizedUrl}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const text = `${signal.title} ${signal.snippet}`.toLowerCase();
+    const urlDomain = toDomain(normalizedUrl);
+    const companyMatch =
+      normalizeCompanyName(signal.title).includes(companyNameNeedle) ||
+      normalizeCompanyName(signal.snippet).includes(companyNameNeedle) ||
+      (websiteDomain && urlDomain === websiteDomain);
+
+    const strongBusinessSignal =
+      /\b(ab|as|a\/s|oy|aps|oü|gmbh|ltd|inc)\b/i.test(text) ||
+      /\b(revenue|employees|omsättning|turnover|org\.?|organisation|about|om oss)\b/i.test(text);
+
+    if (!companyMatch && !strongBusinessSignal) continue;
+
+    filtered.push({
+      ...signal,
+      url: normalizedUrl
+    });
+    if (filtered.length >= maxResults) break;
+  }
+
+  return filtered;
+}
+
 function toScore(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -1004,12 +1182,70 @@ export async function POST(req: Request) {
 
     if (body.externalOnly) {
       if (body.externalMode === "profile") {
+        const companySignals = await discoverCompanySignals({
+          companyName,
+          country,
+          region,
+          organizationNumber: baseCustomer?.organization ?? null,
+          website: baseCustomer?.website ?? null,
+          industry,
+          maxResults: 14
+        });
         const mergedExtraInstructions = [settings.extraInstructions, body.extraInstructions]
           .map((value) => String(value ?? "").trim())
           .filter(Boolean)
           .join("\n\n");
-        const taskBasePrompt = body.basePrompt?.trim() || settings.followupCustomerClickPrompt;
-        const taskPrompt = buildTaskPrompt(taskBasePrompt, {
+        const taskBasePrompt =
+          body.basePrompt?.trim() || settings.fullResearchPrompt || settings.followupCustomerClickPrompt;
+        const deepProfileGuard = [
+          "OUTPUT DEPTH REQUIREMENTS (MANDATORY):",
+          "- Return ONLY valid JSON.",
+          "- No markdown, no code-fences, no prose outside JSON.",
+          "- Include concrete numbers for FitScore, PotentialScore, TotalScore and Year-1 potential (Low/Base/High).",
+          "- Include at least 5 score drivers and at least 5 explicit assumptions.",
+          "- Include at least 8 category recommendations and at least 8 next actions.",
+          "- Include role-based contact paths if named buyers are unavailable.",
+          "- Include estimated revenue/size signals with confidence and source notes.",
+          "- Include at least 8 detailed next actions.",
+          "- Do not stop after account header fields.",
+          "- Be specific for the selected account, not generic."
+        ].join("\n");
+        const deepProfileJsonShape = [
+          "RETURN THIS EXACT JSON SHAPE:",
+          "{",
+          '  "account_summary": {',
+          '    "summary": "",',
+          '    "segment_channel_profile": [],',
+          '    "commercial_relevance_for_vendora": "",',
+          '    "verification_status": "Verified|Estimated|NeedsValidation",',
+          '    "confidence": "High|Medium|Low"',
+          "  },",
+          '  "vendora_fit_scorecard": {',
+          '    "fit_score": 0,',
+          '    "assortment_fit_score": 0,',
+          '    "potential_score": 0,',
+          '    "total_score": 0,',
+          '    "year_1_purchase_potential": { "low": "", "base": "", "high": "", "currency": "SEK" },',
+          '    "score_drivers": [],',
+          '    "assumptions": [],',
+          '    "confidence": "High|Medium|Low"',
+          "  },",
+          '  "recommended_categories_to_pitch": [',
+          '    { "category_or_brand": "", "why_it_fits": "", "opportunity_level": "High|Medium|Low" }',
+          "  ],",
+          '  "contact_paths": {',
+          '    "named_contacts": [',
+          '      { "name": "", "role": "", "source_note": "", "confidence": "High|Medium|Low" }',
+          "    ],",
+          '    "role_based_paths": [',
+          '      { "function": "", "likely_entry_path": "", "confidence": "High|Medium|Low" }',
+          "    ],",
+          '    "fallback_path": ""',
+          "  },",
+          '  "next_best_actions": [""]',
+          "}"
+        ].join("\n");
+        const taskPrompt = buildTaskPrompt(`${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}`, {
           target_account: {
             name: companyName,
             organization: baseCustomer?.organization ?? null,
@@ -1031,11 +1267,17 @@ export async function POST(req: Request) {
           research_inputs: {
             website_data: websiteSnapshots,
             customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
-            public_company_data: {},
+            public_company_data: {
+              signals: companySignals
+            },
             category_signals: [industry].filter(Boolean),
             brand_signals: [],
-            size_signals: {},
-            contact_signals: [],
+            size_signals: companySignals
+              .map((signal) => signal.snippet)
+              .filter((snippet) => /(revenue|omsättning|employees|anställda|turnover|stores)/i.test(snippet)),
+            contact_signals: companySignals
+              .map((signal) => signal.snippet)
+              .filter((snippet) => /(buyer|procurement|category manager|inköp|inkop|business sales)/i.test(snippet)),
             internal_notes: [baseCustomer?.notes].filter(Boolean)
           },
           filters: {
@@ -1055,6 +1297,70 @@ export async function POST(req: Request) {
         }
         if (!aiResult && !aiError) {
           aiError = "Gemini unavailable: missing GEMINI_API_KEY or model access.";
+        }
+
+        const firstStructured = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+        const outputTooShort =
+          (aiResult?.outputText?.trim().length ?? 0) < 1200 ||
+          !firstStructured ||
+          (firstStructured.categoriesToPitch?.length ?? 0) < 5 ||
+          (firstStructured.nextBestActions?.length ?? 0) < 6;
+        if (!aiError && outputTooShort) {
+          const retryPrompt = composePrompt(
+            settings.globalSystemPrompt,
+            buildTaskPrompt(
+              `${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}\n\nCRITICAL RETRY INSTRUCTION: The previous answer was too short or not parseable. Return only complete JSON shape with deeper commercial detail, quantified ranges, and concrete account-specific recommendations.`,
+              {
+                target_account: {
+                  name: companyName,
+                  organization: baseCustomer?.organization ?? null,
+                  country,
+                  region,
+                  industry,
+                  segment_focus: segmentFocus,
+                  seller_owner: seller,
+                  legacy_potential_score: potentialScore
+                },
+                vendora: {
+                  countries_served: settings.countries,
+                  positioning: "Vendora Nordic channel distributor",
+                  assortment_catalog: vendorCatalogWebsites,
+                  strategic_focus: settings.industries,
+                  constraints: [],
+                  onboarding_link: vendorCatalogWebsites[0] ?? null
+                },
+                research_inputs: {
+                  website_data: websiteSnapshots,
+                  customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
+                  public_company_data: {
+                    signals: companySignals
+                  },
+                  category_signals: [industry].filter(Boolean),
+                  brand_signals: [],
+                  size_signals: companySignals
+                    .map((signal) => signal.snippet)
+                    .filter((snippet) => /(revenue|omsättning|employees|anställda|turnover|stores)/i.test(snippet)),
+                  contact_signals: companySignals
+                    .map((signal) => signal.snippet)
+                    .filter((snippet) => /(buyer|procurement|category manager|inköp|inkop|business sales)/i.test(snippet)),
+                  internal_notes: [baseCustomer?.notes].filter(Boolean)
+                },
+                filters: {
+                  scope,
+                  exclude_distributors: true
+                },
+                additional_instructions: mergedExtraInstructions || null
+              }
+            )
+          );
+          try {
+            const retryResult = await generateWithGemini(retryPrompt);
+            if ((retryResult?.outputText?.trim().length ?? 0) > (aiResult?.outputText?.trim().length ?? 0)) {
+              aiResult = retryResult;
+            }
+          } catch {
+            // Keep original result if retry fails.
+          }
         }
 
         const structuredInsight = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
@@ -1085,6 +1391,7 @@ export async function POST(req: Request) {
             externalMode: "profile"
           },
           websiteSnapshots,
+          companySignals,
           similarCustomers: [],
           structuredInsight: structuredWithFallback,
           localAssortmentFitScore,

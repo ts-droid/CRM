@@ -31,7 +31,7 @@ export async function generateWithGemini(prompt: string): Promise<LlmResult | nu
         generationConfig: {
           temperature: 0.2,
           topP: 0.9,
-          maxOutputTokens: 1400
+          maxOutputTokens: 2600
         }
       }),
       cache: "no-store"

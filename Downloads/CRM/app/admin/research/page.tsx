@@ -19,13 +19,22 @@ type ResearchResponse = {
   similarCustomers: Array<{ id: string; name: string; matchScore: number; potentialScore: number }>;
   structuredInsight?: {
     summary?: string;
+    segmentChannelProfile?: string[];
     commercialRelevance?: string;
     confidence?: "High" | "Medium" | "Low";
     fitScore?: number | null;
+    assortmentFitScore?: number | null;
     potentialScore?: number | null;
     totalScore?: number | null;
     year1Potential?: { low?: string; base?: string; high?: string; currency?: string };
     categoriesToPitch?: Array<{ categoryOrBrand?: string; whyItFits?: string; opportunityLevel?: string }>;
+    scoreDrivers?: string[];
+    assumptions?: string[];
+    contactPaths?: {
+      namedContacts?: Array<{ name?: string; role?: string; confidence?: string }>;
+      roleBasedPaths?: Array<{ function?: string; entryPath?: string; confidence?: string }>;
+      fallbackPath?: string;
+    };
     nextBestActions?: string[];
   } | null;
   savedInsight?: {
@@ -855,11 +864,23 @@ function ResearchAdminContent() {
                       <article className="crm-item">
                         <p><strong>{lang === "sv" ? "Sammanfattning" : "Summary"}:</strong> {result.structuredInsight.summary || "-"}</p>
                         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          Fit: {result.structuredInsight.fitScore ?? "-"} · Potential: {result.structuredInsight.potentialScore ?? "-"} · Total: {result.structuredInsight.totalScore ?? "-"} · {lang === "sv" ? "Säkerhet" : "Confidence"}: {result.structuredInsight.confidence ?? "-"}
+                          Fit: {result.structuredInsight.fitScore ?? "-"} · {lang === "sv" ? "Sortimentsfit" : "Assortment fit"}: {result.structuredInsight.assortmentFitScore ?? "-"} · Potential: {result.structuredInsight.potentialScore ?? "-"} · Total: {result.structuredInsight.totalScore ?? "-"} · {lang === "sv" ? "Säkerhet" : "Confidence"}: {result.structuredInsight.confidence ?? "-"}
                         </p>
                         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
                           Y1: {result.structuredInsight.year1Potential?.low || "-"} / {result.structuredInsight.year1Potential?.base || "-"} / {result.structuredInsight.year1Potential?.high || "-"} {result.structuredInsight.year1Potential?.currency || ""}
                         </p>
+                        {result.structuredInsight.commercialRelevance ? (
+                          <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                            {result.structuredInsight.commercialRelevance}
+                          </p>
+                        ) : null}
+                        {Array.isArray(result.structuredInsight.segmentChannelProfile) && result.structuredInsight.segmentChannelProfile.length > 0 ? (
+                          <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                            {result.structuredInsight.segmentChannelProfile.slice(0, 6).map((line, index) => (
+                              <li key={`${line}-${index}`}>{line}</li>
+                            ))}
+                          </ul>
+                        ) : null}
                         {result.savedInsight ? (
                           <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
                             {lang === "sv" ? "Sparat på kund" : "Saved on customer"} · Potential: {result.savedInsight.potentialScore} · {new Date(result.savedInsight.updatedAt).toLocaleString()}
@@ -887,6 +908,42 @@ function ResearchAdminContent() {
                               <li key={`${step}-${index}`}>{step}</li>
                             ))}
                           </ol>
+                        </article>
+                      ) : null}
+                      {Array.isArray(result.structuredInsight.scoreDrivers) && result.structuredInsight.scoreDrivers.length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Scoredrivare" : "Score drivers"}</h4>
+                          <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                            {result.structuredInsight.scoreDrivers.slice(0, 8).map((driver, index) => (
+                              <li key={`${driver}-${index}`}>{driver}</li>
+                            ))}
+                          </ul>
+                        </article>
+                      ) : null}
+                      {Array.isArray(result.structuredInsight.assumptions) && result.structuredInsight.assumptions.length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Antaganden" : "Assumptions"}</h4>
+                          <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                            {result.structuredInsight.assumptions.slice(0, 8).map((assumption, index) => (
+                              <li key={`${assumption}-${index}`}>{assumption}</li>
+                            ))}
+                          </ul>
+                        </article>
+                      ) : null}
+                      {Array.isArray(result.structuredInsight.contactPaths?.roleBasedPaths) &&
+                      result.structuredInsight.contactPaths?.roleBasedPaths &&
+                      result.structuredInsight.contactPaths.roleBasedPaths.length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Kontaktvägar" : "Contact paths"}</h4>
+                          <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
+                            {result.structuredInsight.contactPaths.roleBasedPaths.slice(0, 6).map((path, index) => (
+                              <li key={`${path.function || "path"}-${index}`}>
+                                <strong>{path.function || "-"}</strong>
+                                {path.entryPath ? ` - ${path.entryPath}` : ""}
+                                {path.confidence ? ` (${path.confidence})` : ""}
+                              </li>
+                            ))}
+                          </ul>
                         </article>
                       ) : null}
                       {result.aiResult?.outputText ? (
