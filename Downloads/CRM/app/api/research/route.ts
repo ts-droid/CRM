@@ -1245,7 +1245,7 @@ export async function POST(req: Request) {
           '  "next_best_actions": [""]',
           "}"
         ].join("\n");
-        const taskPrompt = buildTaskPrompt(`${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}`, {
+        const profilePayload = {
           target_account: {
             name: companyName,
             organization: baseCustomer?.organization ?? null,
@@ -1285,7 +1285,8 @@ export async function POST(req: Request) {
             exclude_distributors: true
           },
           additional_instructions: mergedExtraInstructions || null
-        });
+        };
+        const taskPrompt = buildTaskPrompt(`${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}`, profilePayload);
         const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
 
         let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
@@ -1310,47 +1311,7 @@ export async function POST(req: Request) {
             settings.globalSystemPrompt,
             buildTaskPrompt(
               `${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}\n\nCRITICAL RETRY INSTRUCTION: The previous answer was too short or not parseable. Return only complete JSON shape with deeper commercial detail, quantified ranges, and concrete account-specific recommendations.`,
-              {
-                target_account: {
-                  name: companyName,
-                  organization: baseCustomer?.organization ?? null,
-                  country,
-                  region,
-                  industry,
-                  segment_focus: segmentFocus,
-                  seller_owner: seller,
-                  legacy_potential_score: potentialScore
-                },
-                vendora: {
-                  countries_served: settings.countries,
-                  positioning: "Vendora Nordic channel distributor",
-                  assortment_catalog: vendorCatalogWebsites,
-                  strategic_focus: settings.industries,
-                  constraints: [],
-                  onboarding_link: vendorCatalogWebsites[0] ?? null
-                },
-                research_inputs: {
-                  website_data: websiteSnapshots,
-                  customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
-                  public_company_data: {
-                    signals: companySignals
-                  },
-                  category_signals: [industry].filter(Boolean),
-                  brand_signals: [],
-                  size_signals: companySignals
-                    .map((signal) => signal.snippet)
-                    .filter((snippet) => /(revenue|omsättning|employees|anställda|turnover|stores)/i.test(snippet)),
-                  contact_signals: companySignals
-                    .map((signal) => signal.snippet)
-                    .filter((snippet) => /(buyer|procurement|category manager|inköp|inkop|business sales)/i.test(snippet)),
-                  internal_notes: [baseCustomer?.notes].filter(Boolean)
-                },
-                filters: {
-                  scope,
-                  exclude_distributors: true
-                },
-                additional_instructions: mergedExtraInstructions || null
-              }
+              profilePayload
             )
           );
           try {
@@ -1363,7 +1324,44 @@ export async function POST(req: Request) {
           }
         }
 
-        const structuredInsight = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+        let structuredInsight = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+        const needsHardFallback =
+          !aiError &&
+          aiResult?.outputText &&
+          (!structuredInsight ||
+            (structuredInsight.categoriesToPitch?.length ?? 0) < 4 ||
+            (structuredInsight.nextBestActions?.length ?? 0) < 5);
+        if (needsHardFallback) {
+          const hardFallbackPrompt = composePrompt(
+            settings.globalSystemPrompt,
+            buildTaskPrompt(
+              [
+                "TASK: Deep commercial account research for one selected customer account.",
+                "Return ONLY valid JSON using the exact required JSON shape.",
+                "No markdown. No prose outside JSON.",
+                "Must include:",
+                "- fit_score, assortment_fit_score, potential_score, total_score",
+                "- year_1_purchase_potential low/base/high",
+                "- at least 8 recommended categories to pitch",
+                "- at least 8 next_best_actions",
+                "- score_drivers and assumptions with confidence."
+              ].join("\n"),
+              profilePayload
+            )
+          );
+          try {
+            const hardFallbackResult = await generateWithGemini(hardFallbackPrompt);
+            const hardFallbackInsight = hardFallbackResult?.outputText
+              ? parseStructuredResearchInsight(hardFallbackResult.outputText)
+              : null;
+            if (hardFallbackInsight) {
+              aiResult = hardFallbackResult;
+              structuredInsight = hardFallbackInsight;
+            }
+          } catch {
+            // Keep previous result if fallback call fails.
+          }
+        }
         const localAssortmentFitScore = computeAssortmentFitScoreFromSnapshots(
           customerWebsiteSnapshots,
           vendoraWebsiteSnapshots
@@ -1396,6 +1394,7 @@ export async function POST(req: Request) {
           structuredInsight: structuredWithFallback,
           localAssortmentFitScore,
           savedInsight,
+          usedExtraInstructions: mergedExtraInstructions || null,
           aiPrompt: finalPrompt,
           aiResult,
           aiError

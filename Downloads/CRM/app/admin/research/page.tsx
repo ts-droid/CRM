@@ -43,6 +43,7 @@ type ResearchResponse = {
     updatedAt: string;
   } | null;
   aiPrompt: string;
+  usedExtraInstructions?: string | null;
   aiResult?: { provider: "gemini"; model: string; outputText: string } | null;
   aiError?: string | null;
 };
@@ -325,6 +326,13 @@ function ResearchAdminContent() {
   const aiBullets = useMemo(() => extractBullets(aiText), [aiText]);
   const aiSections = useMemo(() => parseMarkdownSections(aiText), [aiText]);
   const isProfileResearchMode = researchRunMode === "profile";
+  const extraInstructionsPlaceholder = isProfileResearchMode
+    ? (lang === "sv"
+      ? "Extra AI-instruktion för vald kund (t.ex. Fokusera på vilka produktfamiljer från reseller.vendora.se som kan säljas mer och motivera med potential)."
+      : "Extra AI instruction for selected customer (e.g. Focus on which product families from reseller.vendora.se can be expanded and explain potential).")
+    : (lang === "sv"
+      ? "Extra AI-instruktion för liknande kunder (t.ex. Visa bara bolag med omsättning > 50 MSEK)."
+      : "Extra AI instruction for similar-customer search (e.g. Only show companies with revenue > 50 MSEK).");
 
   async function loadSettings() {
     try {
@@ -827,11 +835,7 @@ function ResearchAdminContent() {
                   className="crm-textarea"
                   value={researchExtraInstructionsDraft}
                   onChange={(event) => setResearchExtraInstructionsDraft(event.target.value)}
-                  placeholder={
-                    lang === "sv"
-                      ? "Extra AI-instruktioner för denna körning (t.ex. Only show companies with revenue > 50 MSEK)"
-                      : "Extra AI instructions for this run (e.g. Only show companies with revenue > 50 MSEK)"
-                  }
+                  placeholder={extraInstructionsPlaceholder}
                 />
               </div>
               {!isProfileResearchMode ? (
@@ -961,6 +965,12 @@ function ResearchAdminContent() {
                           ) : (
                             <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{result.aiResult.outputText}</pre>
                           )}
+                        </article>
+                      ) : null}
+                      {result.usedExtraInstructions ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Extra instruktion som användes" : "Extra instruction used"}</h4>
+                          <pre className="crm-pre" style={{ marginTop: "0.4rem" }}>{result.usedExtraInstructions}</pre>
                         </article>
                       ) : null}
                     </div>
