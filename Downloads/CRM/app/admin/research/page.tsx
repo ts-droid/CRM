@@ -113,6 +113,7 @@ type AdminUser = {
   email: string;
   name: string | null;
   slackMemberId: string | null;
+  isAdmin?: boolean;
   lastLoginAt: string | null;
   updatedAt: string;
 };
@@ -1376,7 +1377,14 @@ function ResearchAdminContent() {
                     adminUsers.map((user) => (
                       <article className="crm-item" key={user.id}>
                         <div className="crm-item-head">
-                          <strong>{user.name || user.email}</strong>
+                          <div className="crm-row" style={{ alignItems: "center", gap: "0.4rem" }}>
+                            <strong>{user.name || user.email}</strong>
+                            {user.isAdmin ? (
+                              <span className="crm-badge" style={{ background: "#ecfdf3", borderColor: "#86efac", color: "#166534" }}>
+                                {lang === "sv" ? "Admin" : "Admin"}
+                              </span>
+                            ) : null}
+                          </div>
                           <span className="crm-subtle">
                             {user.lastLoginAt
                               ? `${lang === "sv" ? "Senast inloggad" : "Last login"}: ${new Date(user.lastLoginAt).toLocaleString()}`

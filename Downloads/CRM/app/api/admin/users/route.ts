@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isAdminEmail } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const users = await prisma.userProfile.findMany({
+  const usersRaw = await prisma.userProfile.findMany({
     orderBy: [{ lastLoginAt: "desc" }, { email: "asc" }],
     select: {
       id: true,
@@ -15,6 +16,11 @@ export async function GET() {
       updatedAt: true
     }
   });
+
+  const users = usersRaw.map((user) => ({
+    ...user,
+    isAdmin: isAdminEmail(user.email)
+  }));
 
   return NextResponse.json({ users });
 }
@@ -41,7 +47,12 @@ export async function PUT(req: Request) {
       }
     });
 
-    return NextResponse.json({ user });
+    return NextResponse.json({
+      user: {
+        ...user,
+        isAdmin: isAdminEmail(user.email)
+      }
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to update user" },
