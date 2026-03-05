@@ -4,9 +4,19 @@ export type LlmResult = {
   outputText: string;
 };
 
-export async function generateWithGemini(prompt: string): Promise<LlmResult | null> {
+type GeminiOptions = {
+  jsonMode?: boolean;
+  maxOutputTokens?: number;
+};
+
+export async function generateWithGemini(prompt: string, options: GeminiOptions = {}): Promise<LlmResult | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
+  const envMaxTokens = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS);
+  const defaultMaxTokens = Number.isFinite(envMaxTokens) && envMaxTokens > 0 ? Math.round(envMaxTokens) : 8192;
+  const maxOutputTokens = Number.isFinite(options.maxOutputTokens) && (options.maxOutputTokens as number) > 0
+    ? Math.round(options.maxOutputTokens as number)
+    : defaultMaxTokens;
 
   const preferredModel = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
   const modelCandidates = Array.from(
@@ -31,8 +41,16 @@ export async function generateWithGemini(prompt: string): Promise<LlmResult | nu
         generationConfig: {
           temperature: 0.2,
           topP: 0.9,
-          maxOutputTokens: 2600
-        }
+          maxOutputTokens,
+          ...(options.jsonMode ? { responseMimeType: "application/json" } : {})
+        },
+        ...(options.jsonMode
+          ? {
+              systemInstruction: {
+                parts: [{ text: "Return only valid JSON. No markdown fences or prose outside JSON." }]
+              }
+            }
+          : {})
       }),
       cache: "no-store"
     });

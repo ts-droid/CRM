@@ -159,6 +159,71 @@ function normalizeProfileResearchJson(root: JsonMap | null): NormalizedProfileRe
   };
 }
 
+function normalizeProfileResearchFromStructuredInsight(value: ResearchResponse["structuredInsight"]): NormalizedProfileResearch | null {
+  if (!value) return null;
+  const year = value.year1Potential ?? {};
+  const accountSummary: JsonMap = {
+    summary: value.summary ?? "",
+    segment_channel_profile: Array.isArray(value.segmentChannelProfile) ? value.segmentChannelProfile : [],
+    commercial_relevance_for_vendora: value.commercialRelevance ?? "",
+    verification_status: "Estimated",
+    confidence: value.confidence ?? ""
+  };
+  const scorecard: JsonMap = {
+    fit_score: value.fitScore ?? null,
+    assortment_fit_score: value.assortmentFitScore ?? null,
+    potential_score: value.potentialScore ?? null,
+    total_score: value.totalScore ?? null,
+    year_1_purchase_potential: {
+      low: year.low ?? "",
+      base: year.base ?? "",
+      high: year.high ?? "",
+      currency: year.currency ?? "SEK"
+    },
+    score_drivers: Array.isArray(value.scoreDrivers) ? value.scoreDrivers : [],
+    assumptions: Array.isArray(value.assumptions) ? value.assumptions : [],
+    confidence: value.confidence ?? ""
+  };
+  const categories = Array.isArray(value.categoriesToPitch)
+    ? value.categoriesToPitch.map((item) => ({
+        category_or_brand: item.categoryOrBrand ?? "",
+        why_it_fits: item.whyItFits ?? "",
+        opportunity_level: item.opportunityLevel ?? ""
+      }))
+    : [];
+  const contactPaths: JsonMap = {
+    named_contacts: Array.isArray(value.contactPaths?.namedContacts)
+      ? value.contactPaths.namedContacts.map((item) => ({
+          name: item.name ?? "",
+          role: item.role ?? "",
+          confidence: item.confidence ?? ""
+        }))
+      : [],
+    role_based_paths: Array.isArray(value.contactPaths?.roleBasedPaths)
+      ? value.contactPaths.roleBasedPaths.map((item) => ({
+          function: item.function ?? "",
+          likely_entry_path: item.entryPath ?? "",
+          confidence: item.confidence ?? ""
+        }))
+      : [],
+    fallback_path: value.contactPaths?.fallbackPath ?? ""
+  };
+  const nextBestActions = Array.isArray(value.nextBestActions) ? value.nextBestActions : [];
+
+  return {
+    accountSummary,
+    scorecard,
+    growth: {},
+    categories,
+    contactPaths,
+    recommendedPitch: {},
+    outreachAssets: {},
+    risks: {},
+    nextBestActions,
+    evidenceLog: []
+  };
+}
+
 function extractBullets(text: string): string[] {
   return text
     .split("\n")
@@ -483,6 +548,11 @@ function ResearchAdminContent() {
     () => normalizeProfileResearchJson(parsedResearchJson),
     [parsedResearchJson]
   );
+  const normalizedProfileResearchFromStructured = useMemo(
+    () => normalizeProfileResearchFromStructuredInsight(result?.structuredInsight ?? null),
+    [result?.structuredInsight]
+  );
+  const effectiveProfileResearch = normalizedProfileResearch ?? normalizedProfileResearchFromStructured;
   const isProfileResearchMode = researchRunMode === "profile";
   const extraInstructionsPlaceholder = isProfileResearchMode
     ? (lang === "sv"
@@ -1171,23 +1241,23 @@ function ResearchAdminContent() {
                 <section className="crm-card">
                   <h3>{lang === "sv" ? "Kundanalys" : "Customer analysis"}</h3>
                   {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.5rem" }}>{result.aiError}</p> : null}
-                  {normalizedProfileResearch ? (
+                  {effectiveProfileResearch ? (
                     <div className="crm-list" style={{ marginTop: "0.6rem" }}>
                       <article className="crm-item">
                         <h4 style={{ margin: 0 }}>{lang === "sv" ? "Account summary" : "Account summary"}</h4>
                         <p style={{ marginTop: "0.45rem" }}>
-                          <strong>{lang === "sv" ? "Summary" : "Summary"}:</strong> {asText(normalizedProfileResearch.accountSummary.summary) || "-"}
+                          <strong>{lang === "sv" ? "Summary" : "Summary"}:</strong> {asText(effectiveProfileResearch.accountSummary.summary) || "-"}
                         </p>
                         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          <strong>{lang === "sv" ? "Commercial relevance" : "Commercial relevance"}:</strong> {asText(normalizedProfileResearch.accountSummary.commercial_relevance_for_vendora) || "-"}
+                          <strong>{lang === "sv" ? "Commercial relevance" : "Commercial relevance"}:</strong> {asText(effectiveProfileResearch.accountSummary.commercial_relevance_for_vendora) || "-"}
                         </p>
                         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          <strong>{lang === "sv" ? "Verification" : "Verification"}:</strong> {asText(normalizedProfileResearch.accountSummary.verification_status) || "-"} ·{" "}
-                          <strong>{lang === "sv" ? "Confidence" : "Confidence"}:</strong> {asText(normalizedProfileResearch.accountSummary.confidence) || "-"}
+                          <strong>{lang === "sv" ? "Verification" : "Verification"}:</strong> {asText(effectiveProfileResearch.accountSummary.verification_status) || "-"} ·{" "}
+                          <strong>{lang === "sv" ? "Confidence" : "Confidence"}:</strong> {asText(effectiveProfileResearch.accountSummary.confidence) || "-"}
                         </p>
-                        {asTextArray(normalizedProfileResearch.accountSummary.segment_channel_profile).length > 0 ? (
+                        {asTextArray(effectiveProfileResearch.accountSummary.segment_channel_profile).length > 0 ? (
                           <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
-                            {asTextArray(normalizedProfileResearch.accountSummary.segment_channel_profile).slice(0, 12).map((line, index) => (
+                            {asTextArray(effectiveProfileResearch.accountSummary.segment_channel_profile).slice(0, 12).map((line, index) => (
                               <li key={`${line}-${index}`}>{line}</li>
                             ))}
                           </ul>
@@ -1197,36 +1267,36 @@ function ResearchAdminContent() {
                       <article className="crm-item">
                         <h4 style={{ margin: 0 }}>{lang === "sv" ? "Vendora fit scorecard" : "Vendora fit scorecard"}</h4>
                         <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
-                          Fit: {String(normalizedProfileResearch.scorecard.fit_score ?? "-")} ·{" "}
-                          {lang === "sv" ? "Sortimentsfit" : "Assortment fit"}: {String(normalizedProfileResearch.scorecard.assortment_fit_score ?? normalizedProfileResearch.scorecard.fit_score ?? "-")} ·{" "}
-                          Potential: {String(normalizedProfileResearch.scorecard.potential_score ?? "-")} ·{" "}
-                          Total: {String(normalizedProfileResearch.scorecard.total_score ?? "-")}
+                          Fit: {String(effectiveProfileResearch.scorecard.fit_score ?? "-")} ·{" "}
+                          {lang === "sv" ? "Sortimentsfit" : "Assortment fit"}: {String(effectiveProfileResearch.scorecard.assortment_fit_score ?? effectiveProfileResearch.scorecard.fit_score ?? "-")} ·{" "}
+                          Potential: {String(effectiveProfileResearch.scorecard.potential_score ?? "-")} ·{" "}
+                          Total: {String(effectiveProfileResearch.scorecard.total_score ?? "-")}
                         </p>
                         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          Y1: {asText(asJsonMap(normalizedProfileResearch.scorecard.year_1_purchase_potential)?.low) || "-"} /{" "}
-                          {asText(asJsonMap(normalizedProfileResearch.scorecard.year_1_purchase_potential)?.base) || "-"} /{" "}
-                          {asText(asJsonMap(normalizedProfileResearch.scorecard.year_1_purchase_potential)?.high) || "-"}{" "}
-                          {asText(asJsonMap(normalizedProfileResearch.scorecard.year_1_purchase_potential)?.currency) || ""}
+                          Y1: {asText(asJsonMap(effectiveProfileResearch.scorecard.year_1_purchase_potential)?.low) || "-"} /{" "}
+                          {asText(asJsonMap(effectiveProfileResearch.scorecard.year_1_purchase_potential)?.base) || "-"} /{" "}
+                          {asText(asJsonMap(effectiveProfileResearch.scorecard.year_1_purchase_potential)?.high) || "-"}{" "}
+                          {asText(asJsonMap(effectiveProfileResearch.scorecard.year_1_purchase_potential)?.currency) || ""}
                         </p>
                         <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          <strong>{lang === "sv" ? "Classification" : "Classification"}:</strong> {asText(normalizedProfileResearch.scorecard.classification) || "-"} ·{" "}
-                          <strong>{lang === "sv" ? "Confidence" : "Confidence"}:</strong> {asText(normalizedProfileResearch.scorecard.confidence) || "-"}
+                          <strong>{lang === "sv" ? "Classification" : "Classification"}:</strong> {asText(effectiveProfileResearch.scorecard.classification) || "-"} ·{" "}
+                          <strong>{lang === "sv" ? "Confidence" : "Confidence"}:</strong> {asText(effectiveProfileResearch.scorecard.confidence) || "-"}
                         </p>
-                        {asTextArray(normalizedProfileResearch.scorecard.score_drivers).length > 0 ? (
+                        {asTextArray(effectiveProfileResearch.scorecard.score_drivers).length > 0 ? (
                           <>
                             <h5 style={{ marginTop: "0.6rem", marginBottom: 0 }}>{lang === "sv" ? "Score drivers" : "Score drivers"}</h5>
                             <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                              {asTextArray(normalizedProfileResearch.scorecard.score_drivers).slice(0, 12).map((row, index) => (
+                              {asTextArray(effectiveProfileResearch.scorecard.score_drivers).slice(0, 12).map((row, index) => (
                                 <li key={`${row}-${index}`}>{row}</li>
                               ))}
                             </ul>
                           </>
                         ) : null}
-                        {asTextArray(normalizedProfileResearch.scorecard.assumptions).length > 0 ? (
+                        {asTextArray(effectiveProfileResearch.scorecard.assumptions).length > 0 ? (
                           <>
                             <h5 style={{ marginTop: "0.6rem", marginBottom: 0 }}>{lang === "sv" ? "Assumptions" : "Assumptions"}</h5>
                             <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                              {asTextArray(normalizedProfileResearch.scorecard.assumptions).slice(0, 12).map((row, index) => (
+                              {asTextArray(effectiveProfileResearch.scorecard.assumptions).slice(0, 12).map((row, index) => (
                                 <li key={`${row}-${index}`}>{row}</li>
                               ))}
                             </ul>
@@ -1234,7 +1304,7 @@ function ResearchAdminContent() {
                         ) : null}
                       </article>
 
-                      {Object.keys(normalizedProfileResearch.growth).length > 0 ? (
+                      {Object.keys(effectiveProfileResearch.growth).length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Growth opportunities for Vendora" : "Growth opportunities for Vendora"}</h4>
                           {[
@@ -1243,11 +1313,11 @@ function ResearchAdminContent() {
                             { key: "strategic_bets", label: "Strategic bets" },
                             { key: "why_now", label: "Why now" }
                           ].map((group) =>
-                            asTextArray(normalizedProfileResearch.growth[group.key]).length > 0 ? (
+                            asTextArray(effectiveProfileResearch.growth[group.key]).length > 0 ? (
                               <div key={group.key} style={{ marginTop: "0.55rem" }}>
                                 <h5 style={{ margin: 0 }}>{group.label}</h5>
                                 <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                                  {asTextArray(normalizedProfileResearch.growth[group.key]).slice(0, 12).map((row, index) => (
+                                  {asTextArray(effectiveProfileResearch.growth[group.key]).slice(0, 12).map((row, index) => (
                                     <li key={`${row}-${index}`}>{row}</li>
                                   ))}
                                 </ul>
@@ -1257,11 +1327,11 @@ function ResearchAdminContent() {
                         </article>
                       ) : null}
 
-                      {normalizedProfileResearch.categories.length > 0 ? (
+                      {effectiveProfileResearch.categories.length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Recommended categories to pitch" : "Recommended categories to pitch"}</h4>
                           <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
-                            {normalizedProfileResearch.categories.slice(0, 20).map((item, index) => (
+                            {effectiveProfileResearch.categories.slice(0, 20).map((item, index) => (
                               <li key={`${asText(item.category_or_brand) || "cat"}-${index}`}>
                                 <strong>{asText(item.category_or_brand) || "-"}</strong>
                                 {asText(item.why_it_fits) ? ` - ${asText(item.why_it_fits)}` : ""}
@@ -1274,14 +1344,14 @@ function ResearchAdminContent() {
                         </article>
                       ) : null}
 
-                      {Object.keys(normalizedProfileResearch.contactPaths).length > 0 ? (
+                      {Object.keys(effectiveProfileResearch.contactPaths).length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Contact paths" : "Contact paths"}</h4>
-                          {asJsonArray(normalizedProfileResearch.contactPaths.named_contacts).length > 0 ? (
+                          {asJsonArray(effectiveProfileResearch.contactPaths.named_contacts).length > 0 ? (
                             <>
                               <h5 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Named contacts" : "Named contacts"}</h5>
                               <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                                {asJsonArray(normalizedProfileResearch.contactPaths.named_contacts)
+                                {asJsonArray(effectiveProfileResearch.contactPaths.named_contacts)
                                   .map((row) => asJsonMap(row))
                                   .filter((row): row is JsonMap => Boolean(row))
                                   .slice(0, 12)
@@ -1296,11 +1366,11 @@ function ResearchAdminContent() {
                               </ul>
                             </>
                           ) : null}
-                          {asJsonArray(normalizedProfileResearch.contactPaths.role_based_paths).length > 0 ? (
+                          {asJsonArray(effectiveProfileResearch.contactPaths.role_based_paths).length > 0 ? (
                             <>
                               <h5 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Role based paths" : "Role based paths"}</h5>
                               <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                                {asJsonArray(normalizedProfileResearch.contactPaths.role_based_paths)
+                                {asJsonArray(effectiveProfileResearch.contactPaths.role_based_paths)
                                   .map((row) => asJsonMap(row))
                                   .filter((row): row is JsonMap => Boolean(row))
                                   .slice(0, 12)
@@ -1316,29 +1386,29 @@ function ResearchAdminContent() {
                               </ul>
                             </>
                           ) : null}
-                          {asText(normalizedProfileResearch.contactPaths.fallback_path) ? (
+                          {asText(effectiveProfileResearch.contactPaths.fallback_path) ? (
                             <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
-                              <strong>Fallback:</strong> {asText(normalizedProfileResearch.contactPaths.fallback_path)}
+                              <strong>Fallback:</strong> {asText(effectiveProfileResearch.contactPaths.fallback_path)}
                             </p>
                           ) : null}
                         </article>
                       ) : null}
 
-                      {Object.keys(normalizedProfileResearch.recommendedPitch).length > 0 ? (
+                      {Object.keys(effectiveProfileResearch.recommendedPitch).length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Recommended pitch" : "Recommended pitch"}</h4>
                           <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
-                            <strong>{lang === "sv" ? "Opening narrative" : "Opening narrative"}:</strong> {asText(normalizedProfileResearch.recommendedPitch.opening_narrative) || "-"}
+                            <strong>{lang === "sv" ? "Opening narrative" : "Opening narrative"}:</strong> {asText(effectiveProfileResearch.recommendedPitch.opening_narrative) || "-"}
                           </p>
                           <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                            <strong>{lang === "sv" ? "Why it should resonate" : "Why it should resonate"}:</strong> {asText(normalizedProfileResearch.recommendedPitch.why_it_should_resonate) || "-"}
+                            <strong>{lang === "sv" ? "Why it should resonate" : "Why it should resonate"}:</strong> {asText(effectiveProfileResearch.recommendedPitch.why_it_should_resonate) || "-"}
                           </p>
                           <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                            <strong>{lang === "sv" ? "Lead category" : "Lead category"}:</strong> {asText(normalizedProfileResearch.recommendedPitch.lead_category) || "-"}
+                            <strong>{lang === "sv" ? "Lead category" : "Lead category"}:</strong> {asText(effectiveProfileResearch.recommendedPitch.lead_category) || "-"}
                           </p>
-                          {asTextArray(normalizedProfileResearch.recommendedPitch.key_proof_points).length > 0 ? (
+                          {asTextArray(effectiveProfileResearch.recommendedPitch.key_proof_points).length > 0 ? (
                             <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                              {asTextArray(normalizedProfileResearch.recommendedPitch.key_proof_points).slice(0, 12).map((row, index) => (
+                              {asTextArray(effectiveProfileResearch.recommendedPitch.key_proof_points).slice(0, 12).map((row, index) => (
                                 <li key={`${row}-${index}`}>{row}</li>
                               ))}
                             </ul>
@@ -1346,46 +1416,46 @@ function ResearchAdminContent() {
                         </article>
                       ) : null}
 
-                      {Object.keys(normalizedProfileResearch.outreachAssets).length > 0 ? (
+                      {Object.keys(effectiveProfileResearch.outreachAssets).length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Outreach assets" : "Outreach assets"}</h4>
-                          {asTextArray(normalizedProfileResearch.outreachAssets.subject_lines).length > 0 ? (
+                          {asTextArray(effectiveProfileResearch.outreachAssets.subject_lines).length > 0 ? (
                             <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
-                              <strong>{lang === "sv" ? "Subject lines" : "Subject lines"}:</strong> {asTextArray(normalizedProfileResearch.outreachAssets.subject_lines).join(" | ")}
+                              <strong>{lang === "sv" ? "Subject lines" : "Subject lines"}:</strong> {asTextArray(effectiveProfileResearch.outreachAssets.subject_lines).join(" | ")}
                             </p>
                           ) : null}
-                          {asText(normalizedProfileResearch.outreachAssets.short_intro_email) ? (
+                          {asText(effectiveProfileResearch.outreachAssets.short_intro_email) ? (
                             <div style={{ marginTop: "0.45rem" }}>
                               <p className="crm-subtle" style={{ margin: 0 }}><strong>{lang === "sv" ? "Short intro email" : "Short intro email"}</strong></p>
-                              <pre className="crm-pre" style={{ marginTop: "0.35rem" }}>{asText(normalizedProfileResearch.outreachAssets.short_intro_email)}</pre>
+                              <pre className="crm-pre" style={{ marginTop: "0.35rem" }}>{asText(effectiveProfileResearch.outreachAssets.short_intro_email)}</pre>
                             </div>
                           ) : null}
-                          {asText(normalizedProfileResearch.outreachAssets.consultative_email) ? (
+                          {asText(effectiveProfileResearch.outreachAssets.consultative_email) ? (
                             <div style={{ marginTop: "0.45rem" }}>
                               <p className="crm-subtle" style={{ margin: 0 }}><strong>{lang === "sv" ? "Consultative email" : "Consultative email"}</strong></p>
-                              <pre className="crm-pre" style={{ marginTop: "0.35rem" }}>{asText(normalizedProfileResearch.outreachAssets.consultative_email)}</pre>
+                              <pre className="crm-pre" style={{ marginTop: "0.35rem" }}>{asText(effectiveProfileResearch.outreachAssets.consultative_email)}</pre>
                             </div>
                           ) : null}
-                          {asJsonMap(normalizedProfileResearch.outreachAssets.call_script) ? (
+                          {asJsonMap(effectiveProfileResearch.outreachAssets.call_script) ? (
                             <div style={{ marginTop: "0.45rem" }}>
                               <p className="crm-subtle" style={{ margin: 0 }}><strong>{lang === "sv" ? "Call script" : "Call script"}</strong></p>
-                              {asTextArray(asJsonMap(normalizedProfileResearch.outreachAssets.call_script)?.call_structure).length > 0 ? (
+                              {asTextArray(asJsonMap(effectiveProfileResearch.outreachAssets.call_script)?.call_structure).length > 0 ? (
                                 <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                                  {asTextArray(asJsonMap(normalizedProfileResearch.outreachAssets.call_script)?.call_structure).slice(0, 12).map((row, index) => (
+                                  {asTextArray(asJsonMap(effectiveProfileResearch.outreachAssets.call_script)?.call_structure).slice(0, 12).map((row, index) => (
                                     <li key={`${row}-${index}`}>{row}</li>
                                   ))}
                                 </ul>
                               ) : null}
-                              {asTextArray(asJsonMap(normalizedProfileResearch.outreachAssets.call_script)?.discovery_questions).length > 0 ? (
+                              {asTextArray(asJsonMap(effectiveProfileResearch.outreachAssets.call_script)?.discovery_questions).length > 0 ? (
                                 <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                                  {asTextArray(asJsonMap(normalizedProfileResearch.outreachAssets.call_script)?.discovery_questions).slice(0, 12).map((row, index) => (
+                                  {asTextArray(asJsonMap(effectiveProfileResearch.outreachAssets.call_script)?.discovery_questions).slice(0, 12).map((row, index) => (
                                     <li key={`${row}-${index}`}>{row}</li>
                                   ))}
                                 </ul>
                               ) : null}
-                              {asText(asJsonMap(normalizedProfileResearch.outreachAssets.call_script)?.recommended_close) ? (
+                              {asText(asJsonMap(effectiveProfileResearch.outreachAssets.call_script)?.recommended_close) ? (
                                 <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                                  <strong>{lang === "sv" ? "Recommended close" : "Recommended close"}:</strong> {asText(asJsonMap(normalizedProfileResearch.outreachAssets.call_script)?.recommended_close)}
+                                  <strong>{lang === "sv" ? "Recommended close" : "Recommended close"}:</strong> {asText(asJsonMap(effectiveProfileResearch.outreachAssets.call_script)?.recommended_close)}
                                 </p>
                               ) : null}
                             </div>
@@ -1393,7 +1463,7 @@ function ResearchAdminContent() {
                         </article>
                       ) : null}
 
-                      {Object.keys(normalizedProfileResearch.risks).length > 0 ? (
+                      {Object.keys(effectiveProfileResearch.risks).length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Risks and barriers" : "Risks and barriers"}</h4>
                           {[
@@ -1401,11 +1471,11 @@ function ResearchAdminContent() {
                             { key: "open_questions", label: "Open questions" },
                             { key: "confidence_gaps", label: "Confidence gaps" }
                           ].map((group) =>
-                            asTextArray(normalizedProfileResearch.risks[group.key]).length > 0 ? (
+                            asTextArray(effectiveProfileResearch.risks[group.key]).length > 0 ? (
                               <div key={group.key} style={{ marginTop: "0.55rem" }}>
                                 <h5 style={{ margin: 0 }}>{group.label}</h5>
                                 <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                                  {asTextArray(normalizedProfileResearch.risks[group.key]).slice(0, 12).map((row, index) => (
+                                  {asTextArray(effectiveProfileResearch.risks[group.key]).slice(0, 12).map((row, index) => (
                                     <li key={`${row}-${index}`}>{row}</li>
                                   ))}
                                 </ul>
@@ -1415,22 +1485,22 @@ function ResearchAdminContent() {
                         </article>
                       ) : null}
 
-                      {normalizedProfileResearch.nextBestActions.length > 0 ? (
+                      {effectiveProfileResearch.nextBestActions.length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Next best actions" : "Next best actions"}</h4>
                           <ol style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
-                            {normalizedProfileResearch.nextBestActions.slice(0, 20).map((step, index) => (
+                            {effectiveProfileResearch.nextBestActions.slice(0, 20).map((step, index) => (
                               <li key={`${step}-${index}`}>{step}</li>
                             ))}
                           </ol>
                         </article>
                       ) : null}
 
-                      {normalizedProfileResearch.evidenceLog.length > 0 ? (
+                      {effectiveProfileResearch.evidenceLog.length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Evidence log" : "Evidence log"}</h4>
                           <ul style={{ marginTop: "0.45rem", paddingLeft: "1.1rem" }}>
-                            {normalizedProfileResearch.evidenceLog.slice(0, 30).map((entry, index) => {
+                            {effectiveProfileResearch.evidenceLog.slice(0, 30).map((entry, index) => {
                               const sourceUrl = asText(entry.source_url);
                               const sourceType = asText(entry.source_type);
                               const snippet = asText(entry.evidence_snippet);
@@ -1612,18 +1682,30 @@ function ResearchAdminContent() {
                     </div>
                   ) : result.aiResult?.outputText ? (
                     <div className="crm-list" style={{ marginTop: "0.6rem" }}>
-                      {aiSections.length > 0 ? (
-                        aiSections.map((section) => (
-                          <article key={section.title} className="crm-item">
-                            <h4 style={{ margin: 0 }}>{section.title}</h4>
-                            <pre className="crm-pre" style={{ marginTop: "0.4rem" }}>{section.body}</pre>
-                          </article>
-                        ))
-                      ) : (
-                        <article className="crm-item">
-                          <pre className="crm-pre">{result.aiResult.outputText}</pre>
-                        </article>
-                      )}
+                      <article className="crm-item">
+                        <p className="crm-subtle" style={{ margin: 0 }}>
+                          {lang === "sv"
+                            ? "Kunde inte normalisera AI-svaret till strukturerad visning. Visa rå output för felsökning nedan."
+                            : "Could not normalize AI response into structured view. Show raw output for debugging below."}
+                        </p>
+                        <details style={{ marginTop: "0.45rem" }}>
+                          <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                            {lang === "sv" ? "Visa rå AI-output" : "Show raw AI output"}
+                          </summary>
+                          {aiSections.length > 0 ? (
+                            <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                              {aiSections.map((section) => (
+                                <article key={section.title} className="crm-item">
+                                  <h4 style={{ margin: 0 }}>{section.title}</h4>
+                                  <pre className="crm-pre" style={{ marginTop: "0.4rem" }}>{section.body}</pre>
+                                </article>
+                              ))}
+                            </div>
+                          ) : (
+                            <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{result.aiResult.outputText}</pre>
+                          )}
+                        </details>
+                      </article>
                     </div>
                   ) : (
                     <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>

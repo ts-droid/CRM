@@ -80,6 +80,26 @@ type ExistingCustomerRef = {
   domain: string;
 };
 
+function compactWebsiteSnapshotsForPrompt(
+  snapshots: Array<{
+    url: string;
+    title: string | null;
+    description: string | null;
+    h1: string | null;
+    textSample: string;
+    vendoraFitScore: number;
+  }>
+) {
+  return snapshots.map((snapshot) => ({
+    url: snapshot.url,
+    title: snapshot.title,
+    description: snapshot.description,
+    h1: snapshot.h1,
+    textSample: String(snapshot.textSample ?? "").slice(0, 420),
+    vendoraFitScore: snapshot.vendoraFitScore
+  }));
+}
+
 function readSessionToken(cookieHeader: string): string | null {
   const cookiePart = cookieHeader
     .split(";")
@@ -707,7 +727,7 @@ async function validateCandidatesWithGemini(
   );
 
   try {
-    const result = await generateWithGemini(prompt);
+    const result = await generateWithGemini(prompt, { jsonMode: true, maxOutputTokens: 4096 });
     if (!result?.outputText) return candidates;
     const parsed = extractJsonObject(result.outputText);
     const keepRows = Array.isArray(parsed?.keep) ? parsed.keep : [];
@@ -1344,6 +1364,7 @@ export async function POST(req: Request) {
     ).filter((item): item is NonNullable<typeof item> => Boolean(item));
     const customerWebsiteSnapshots = websiteSnapshots.filter((snapshot) => !isVendoraWebsite(snapshot.url));
     const vendoraWebsiteSnapshots = websiteSnapshots.filter((snapshot) => isVendoraWebsite(snapshot.url));
+    const compactWebsiteSnapshots = compactWebsiteSnapshotsForPrompt(websiteSnapshots);
 
     let similarCustomers: SimilarCandidate[] = [];
 
@@ -1434,7 +1455,7 @@ export async function POST(req: Request) {
             onboarding_link: vendorCatalogWebsites[0] ?? null
           },
           research_inputs: {
-            website_data: websiteSnapshots,
+            website_data: compactWebsiteSnapshots,
             customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
             public_company_data: {
               signals: companySignals
@@ -1464,7 +1485,7 @@ export async function POST(req: Request) {
         let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
         let aiError: string | null = null;
         try {
-          aiResult = await generateWithGemini(finalPrompt);
+          aiResult = await generateWithGemini(finalPrompt, { jsonMode: true, maxOutputTokens: 12288 });
         } catch (error) {
           aiError = error instanceof Error ? error.message : "Gemini request failed";
         }
@@ -1487,7 +1508,7 @@ export async function POST(req: Request) {
             )
           );
           try {
-            const retryResult = await generateWithGemini(retryPrompt);
+            const retryResult = await generateWithGemini(retryPrompt, { jsonMode: true, maxOutputTokens: 12288 });
             if ((retryResult?.outputText?.trim().length ?? 0) > (aiResult?.outputText?.trim().length ?? 0)) {
               aiResult = retryResult;
             }
@@ -1522,7 +1543,7 @@ export async function POST(req: Request) {
             )
           );
           try {
-            const hardFallbackResult = await generateWithGemini(hardFallbackPrompt);
+            const hardFallbackResult = await generateWithGemini(hardFallbackPrompt, { jsonMode: true, maxOutputTokens: 12288 });
             const hardFallbackInsight = hardFallbackResult?.outputText
               ? parseStructuredResearchInsight(hardFallbackResult.outputText)
               : null;
@@ -1607,7 +1628,7 @@ export async function POST(req: Request) {
           region,
           industry,
           segment_focus: segmentFocus,
-          website_data: websiteSnapshots
+          website_data: compactWebsiteSnapshots
         },
         vendora: {
           countries_served: settings.countries,
@@ -1649,7 +1670,7 @@ export async function POST(req: Request) {
           region,
           industry,
           segment_focus: segmentFocus,
-          website_data: websiteSnapshots
+          website_data: compactWebsiteSnapshots
         },
         vendora: {
           countries_served: settings.countries,
@@ -1750,7 +1771,7 @@ export async function POST(req: Request) {
             region,
             industry,
             segment_focus: segmentFocus,
-            website_data: websiteSnapshots
+            website_data: compactWebsiteSnapshots
           },
           vendora: {
             countries_served: settings.countries,
@@ -2023,7 +2044,7 @@ export async function POST(req: Request) {
         constraints: []
       },
       research_inputs: {
-        website_data: websiteSnapshots,
+        website_data: compactWebsiteSnapshots,
         similar_candidates_from_crm: similarCustomers,
         internal_notes: [baseCustomer?.notes].filter(Boolean)
       },

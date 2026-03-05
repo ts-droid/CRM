@@ -65,7 +65,12 @@ export async function fetchWebsiteSnapshot(inputUrl: string): Promise<WebsiteSna
   const description = pick(html, /<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["'][^>]*>/i);
   const h1 = pick(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i);
 
-  const textSample = `${title ?? ""} ${description ?? ""} ${h1 ?? ""} ${html.slice(0, 5000)}`
+  const htmlWithoutScripts = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+
+  const textSample = `${title ?? ""} ${description ?? ""} ${h1 ?? ""} ${htmlWithoutScripts.slice(0, 5000)}`
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
