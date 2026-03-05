@@ -2,6 +2,7 @@ export type LlmResult = {
   provider: "gemini";
   model: string;
   outputText: string;
+  finishReason?: string;
 };
 
 type GeminiOptions = {
@@ -13,10 +14,11 @@ export async function generateWithGemini(prompt: string, options: GeminiOptions 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
   const envMaxTokens = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS);
-  const defaultMaxTokens = Number.isFinite(envMaxTokens) && envMaxTokens > 0 ? Math.round(envMaxTokens) : 8192;
-  const maxOutputTokens = Number.isFinite(options.maxOutputTokens) && (options.maxOutputTokens as number) > 0
+  const defaultMaxTokens = Number.isFinite(envMaxTokens) && envMaxTokens > 0 ? Math.round(envMaxTokens) : 16384;
+  const maxOutputTokensRaw = Number.isFinite(options.maxOutputTokens) && (options.maxOutputTokens as number) > 0
     ? Math.round(options.maxOutputTokens as number)
     : defaultMaxTokens;
+  const maxOutputTokens = Math.max(512, Math.min(32768, maxOutputTokensRaw));
 
   const preferredModel = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
   const modelCandidates = Array.from(
@@ -66,6 +68,7 @@ export async function generateWithGemini(prompt: string, options: GeminiOptions 
 
     const data = (await response.json()) as {
       candidates?: Array<{
+        finishReason?: string;
         content?: {
           parts?: Array<{ text?: string }>;
         };
@@ -81,7 +84,8 @@ export async function generateWithGemini(prompt: string, options: GeminiOptions 
     return {
       provider: "gemini",
       model,
-      outputText
+      outputText,
+      finishReason: data.candidates?.[0]?.finishReason
     };
   }
 

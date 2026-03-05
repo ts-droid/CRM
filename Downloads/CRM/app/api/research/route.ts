@@ -100,6 +100,25 @@ function compactWebsiteSnapshotsForPrompt(
   }));
 }
 
+function compactWebsiteSnapshotsForRetry(
+  snapshots: Array<{
+    url: string;
+    title: string | null;
+    description: string | null;
+    h1: string | null;
+    textSample: string;
+    vendoraFitScore: number;
+  }>
+) {
+  return snapshots.map((snapshot) => ({
+    url: snapshot.url,
+    title: snapshot.title,
+    description: snapshot.description,
+    h1: snapshot.h1,
+    vendoraFitScore: snapshot.vendoraFitScore
+  }));
+}
+
 function readSessionToken(cookieHeader: string): string | null {
   const cookiePart = cookieHeader
     .split(";")
@@ -1278,6 +1297,11 @@ export async function POST(req: Request) {
     const settings = await getResearchConfig();
     const scope = body.scope === "country" ? "country" : body.scope === "region" ? "region" : settings.defaultScope;
     const maxSimilar = Math.max(1, Math.min(500, body.maxSimilar ?? 10));
+    const profileMaxTokensRaw = Number(process.env.GEMINI_PROFILE_MAX_OUTPUT_TOKENS);
+    const profileMaxTokens =
+      Number.isFinite(profileMaxTokensRaw) && profileMaxTokensRaw > 0
+        ? Math.max(4096, Math.min(32768, Math.round(profileMaxTokensRaw)))
+        : 24576;
 
     let baseCustomer = null as null | MinimalCustomer;
 
@@ -1485,7 +1509,7 @@ export async function POST(req: Request) {
         let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
         let aiError: string | null = null;
         try {
-          aiResult = await generateWithGemini(finalPrompt, { jsonMode: true, maxOutputTokens: 12288 });
+          aiResult = await generateWithGemini(finalPrompt, { jsonMode: true, maxOutputTokens: profileMaxTokens });
         } catch (error) {
           aiError = error instanceof Error ? error.message : "Gemini request failed";
         }
@@ -1494,7 +1518,12 @@ export async function POST(req: Request) {
         }
 
         const firstStructured = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+        const truncatedByModel =
+          String(aiResult?.finishReason ?? "")
+            .toUpperCase()
+            .includes("MAX_TOKENS");
         const outputTooShort =
+          truncatedByModel ||
           (aiResult?.outputText?.trim().length ?? 0) < 1200 ||
           !firstStructured ||
           (firstStructured.categoriesToPitch?.length ?? 0) < 5 ||
@@ -1508,7 +1537,7 @@ export async function POST(req: Request) {
             )
           );
           try {
-            const retryResult = await generateWithGemini(retryPrompt, { jsonMode: true, maxOutputTokens: 12288 });
+            const retryResult = await generateWithGemini(retryPrompt, { jsonMode: true, maxOutputTokens: profileMaxTokens });
             if ((retryResult?.outputText?.trim().length ?? 0) > (aiResult?.outputText?.trim().length ?? 0)) {
               aiResult = retryResult;
             }
@@ -1543,7 +1572,10 @@ export async function POST(req: Request) {
             )
           );
           try {
-            const hardFallbackResult = await generateWithGemini(hardFallbackPrompt, { jsonMode: true, maxOutputTokens: 12288 });
+            const hardFallbackResult = await generateWithGemini(hardFallbackPrompt, {
+              jsonMode: true,
+              maxOutputTokens: profileMaxTokens
+            });
             const hardFallbackInsight = hardFallbackResult?.outputText
               ? parseStructuredResearchInsight(hardFallbackResult.outputText)
               : null;
@@ -1553,6 +1585,44 @@ export async function POST(req: Request) {
             }
           } catch {
             // Keep previous result if fallback call fails.
+          }
+        }
+
+        if (!aiError && !structuredInsight) {
+          const compactPayload = {
+            ...profilePayload,
+            research_inputs: {
+              ...profilePayload.research_inputs,
+              website_data: compactWebsiteSnapshotsForRetry(websiteSnapshots)
+            }
+          };
+          const compactRetryPrompt = composePrompt(
+            settings.globalSystemPrompt,
+            buildTaskPrompt(
+              [
+                "TASK: Deep commercial account research for one selected customer account.",
+                "Return ONLY valid JSON in the required shape.",
+                "No markdown. No code fences. No prose outside JSON.",
+                "Keep text concise but complete for all required fields.",
+                "Prioritize parseable, complete JSON over verbosity."
+              ].join("\n"),
+              compactPayload
+            )
+          );
+          try {
+            const compactResult = await generateWithGemini(compactRetryPrompt, {
+              jsonMode: true,
+              maxOutputTokens: profileMaxTokens
+            });
+            const compactInsight = compactResult?.outputText
+              ? parseStructuredResearchInsight(compactResult.outputText)
+              : null;
+            if (compactInsight) {
+              aiResult = compactResult;
+              structuredInsight = compactInsight;
+            }
+          } catch {
+            // Keep previous result if compact retry fails.
           }
         }
         const localAssortmentFitScore = computeAssortmentFitScoreFromSnapshots(
