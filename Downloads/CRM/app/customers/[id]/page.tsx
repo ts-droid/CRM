@@ -47,7 +47,25 @@ type Customer = {
       fitScore?: number | null;
       confidence?: string | null;
       updatedAt?: string | null;
+      updatedBy?: string | null;
     } | null;
+    researchHistory?: Array<{
+      id?: string;
+      ranAt?: string;
+      ranBy?: string | null;
+      model?: string | null;
+      summary?: string;
+      commercialRelevance?: string;
+      fitScore?: number | null;
+      assortmentFitScore?: number | null;
+      potentialScore?: number | null;
+      totalScore?: number | null;
+      confidence?: string | null;
+      year1Potential?: { low?: string; base?: string; high?: string; currency?: string } | null;
+      categoriesToPitch?: Array<{ categoryOrBrand?: string; whyItFits?: string; opportunityLevel?: string }> | null;
+      nextBestActions?: string[] | null;
+      rawOutput?: string | null;
+    }> | null;
   } | null;
 };
 
@@ -236,6 +254,27 @@ type LookalikeRow = {
   confidence: string;
 };
 
+type ResearchHistoryRow = {
+  id: string;
+  ranAt: string;
+  ranBy: string | null;
+  model: string | null;
+  summary: string;
+  commercialRelevance: string;
+  fitScore: number | null;
+  assortmentFitScore: number | null;
+  potentialScore: number | null;
+  totalScore: number | null;
+  confidence: string | null;
+  year1Low: string;
+  year1Base: string;
+  year1High: string;
+  year1Currency: string;
+  categories: Array<{ categoryOrBrand: string; whyItFits: string; opportunityLevel: string }>;
+  nextBestActions: string[];
+  rawOutput: string;
+};
+
 function parseMarkdownSections(text: string): MarkdownSection[] {
   const lines = text.split("\n");
   const sections: MarkdownSection[] = [];
@@ -373,7 +412,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const salesSectionEnabled = process.env.NEXT_PUBLIC_FEATURE_SALES_SECTION === "true";
   const { lang } = useI18n();
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "contacts" | "plans" | "activity">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "contacts" | "plans" | "activity" | "research">("overview");
   const [activities, setActivities] = useState<Activity[]>([]);
   const [noteText, setNoteText] = useState("");
   const [activityStatus, setActivityStatus] = useState("");
@@ -603,6 +642,54 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       : typeof customer?.webshopSignals?.research?.fitScore === "number"
       ? customer.webshopSignals?.research?.fitScore
       : null;
+  const researchHistory: ResearchHistoryRow[] = (
+    Array.isArray(customer?.webshopSignals?.researchHistory) ? customer?.webshopSignals?.researchHistory : []
+  )
+    .map((raw, index) => {
+      const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+      if (!row) return null;
+      const year1 = row.year1Potential && typeof row.year1Potential === "object"
+        ? (row.year1Potential as Record<string, unknown>)
+        : null;
+      const categories = Array.isArray(row.categoriesToPitch) ? row.categoriesToPitch : [];
+      const nextBestActions = Array.isArray(row.nextBestActions) ? row.nextBestActions : [];
+      const ranAt =
+        typeof row.ranAt === "string" && row.ranAt.trim()
+          ? row.ranAt
+          : customer?.updatedAt || new Date().toISOString();
+      return {
+        id: typeof row.id === "string" && row.id.trim() ? row.id : `research-${index}`,
+        ranAt,
+        ranBy: typeof row.ranBy === "string" && row.ranBy.trim() ? row.ranBy : null,
+        model: typeof row.model === "string" && row.model.trim() ? row.model : null,
+        summary: typeof row.summary === "string" ? row.summary : "",
+        commercialRelevance: typeof row.commercialRelevance === "string" ? row.commercialRelevance : "",
+        fitScore: typeof row.fitScore === "number" ? row.fitScore : null,
+        assortmentFitScore: typeof row.assortmentFitScore === "number" ? row.assortmentFitScore : null,
+        potentialScore: typeof row.potentialScore === "number" ? row.potentialScore : null,
+        totalScore: typeof row.totalScore === "number" ? row.totalScore : null,
+        confidence: typeof row.confidence === "string" && row.confidence.trim() ? row.confidence : null,
+        year1Low: typeof year1?.low === "string" ? year1.low : "",
+        year1Base: typeof year1?.base === "string" ? year1.base : "",
+        year1High: typeof year1?.high === "string" ? year1.high : "",
+        year1Currency: typeof year1?.currency === "string" ? year1.currency : "SEK",
+        categories: categories
+          .map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>) : null))
+          .filter((item): item is Record<string, unknown> => Boolean(item))
+          .map((item) => ({
+            categoryOrBrand: typeof item.categoryOrBrand === "string" ? item.categoryOrBrand : "",
+            whyItFits: typeof item.whyItFits === "string" ? item.whyItFits : "",
+            opportunityLevel: typeof item.opportunityLevel === "string" ? item.opportunityLevel : ""
+          }))
+          .filter((item) => item.categoryOrBrand),
+        nextBestActions: nextBestActions
+          .map((item) => (typeof item === "string" ? item : ""))
+          .filter(Boolean),
+        rawOutput: typeof row.rawOutput === "string" ? row.rawOutput : ""
+      } satisfies ResearchHistoryRow;
+    })
+    .filter((row): row is ResearchHistoryRow => Boolean(row))
+    .sort((a, b) => new Date(b.ranAt).getTime() - new Date(a.ranAt).getTime());
   const similarAiSections = parseMarkdownSections(similarAiOutput);
   const lookalikeRows = parseLookalikeTable(similarAiOutput);
   const aiDrillNames = extractDrillCandidatesFromText(similarAiOutput, 24);
@@ -1107,6 +1194,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           <button className={`crm-tab ${activeTab === "activity" ? "active" : ""}`} onClick={() => setActiveTab("activity")} type="button">
             {lang === "sv" ? "Historik" : "Activity"}
           </button>
+          <button className={`crm-tab ${activeTab === "research" ? "active" : ""}`} onClick={() => setActiveTab("research")} type="button">
+            {lang === "sv" ? "Researchresultat" : "Research results"}
+          </button>
         </div>
       </section>
 
@@ -1486,6 +1576,87 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             </section>
           ) : null}
         </>
+      ) : null}
+
+      {activeTab === "research" ? (
+      <section className="crm-card">
+        <div className="crm-item-head">
+          <h3>{lang === "sv" ? "Researchresultat" : "Research results"}</h3>
+          <Link
+            href={`/research?mode=profile&customerId=${encodeURIComponent(customer.id)}&companyName=${encodeURIComponent(customer.name)}`}
+            className="crm-button crm-button-secondary"
+          >
+            {lang === "sv" ? "Kör ny research" : "Run new research"}
+          </Link>
+        </div>
+        <p className="crm-subtle" style={{ marginTop: "0.4rem" }}>
+          {lang === "sv"
+            ? "Visar sparade researchkörningar för kunden (senaste överst)."
+            : "Shows saved research runs for this customer (latest first)."}
+        </p>
+        <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+          {researchHistory.length === 0 ? (
+            <p className="crm-empty">{lang === "sv" ? "Ingen research sparad ännu." : "No saved research yet."}</p>
+          ) : (
+            researchHistory.map((entry) => (
+              <article key={entry.id} className="crm-item">
+                <div className="crm-item-head">
+                  <strong>{new Date(entry.ranAt).toLocaleString()}</strong>
+                  <span className="crm-badge">{entry.model || "gemini"}</span>
+                </div>
+                <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                  {(lang === "sv" ? "Körd av" : "Run by")}: {entry.ranBy || "-"}
+                </p>
+                <p style={{ marginTop: "0.4rem" }}>
+                  <strong>{lang === "sv" ? "Summary" : "Summary"}:</strong> {entry.summary || "-"}
+                </p>
+                {entry.commercialRelevance ? (
+                  <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>{entry.commercialRelevance}</p>
+                ) : null}
+                <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                  Fit: {entry.fitScore ?? "-"} · {lang === "sv" ? "Sortimentsfit" : "Assortment fit"}: {entry.assortmentFitScore ?? "-"} ·{" "}
+                  {lang === "sv" ? "Potential" : "Potential"}: {entry.potentialScore ?? "-"} · Total: {entry.totalScore ?? "-"} ·{" "}
+                  {lang === "sv" ? "Säkerhet" : "Confidence"}: {entry.confidence || "-"}
+                </p>
+                <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                  Y1: {entry.year1Low || "-"} / {entry.year1Base || "-"} / {entry.year1High || "-"} {entry.year1Currency || ""}
+                </p>
+                {entry.categories.length > 0 ? (
+                  <>
+                    <h4 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Prioriterade kategorier" : "Priority categories"}</h4>
+                    <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                      {entry.categories.slice(0, 8).map((category, index) => (
+                        <li key={`${entry.id}-cat-${index}`}>
+                          <strong>{category.categoryOrBrand}</strong>
+                          {category.whyItFits ? ` - ${category.whyItFits}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+                {entry.nextBestActions.length > 0 ? (
+                  <>
+                    <h4 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Nästa steg" : "Next steps"}</h4>
+                    <ol style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                      {entry.nextBestActions.slice(0, 8).map((action, index) => (
+                        <li key={`${entry.id}-step-${index}`}>{action}</li>
+                      ))}
+                    </ol>
+                  </>
+                ) : null}
+                {entry.rawOutput ? (
+                  <details style={{ marginTop: "0.55rem" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                      {lang === "sv" ? "Visa rå AI-output" : "Show raw AI output"}
+                    </summary>
+                    <pre className="crm-pre" style={{ marginTop: "0.45rem" }}>{entry.rawOutput}</pre>
+                  </details>
+                ) : null}
+              </article>
+            ))
+          )}
+        </div>
+      </section>
       ) : null}
 
       {activeTab === "contacts" ? (

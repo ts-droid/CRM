@@ -55,7 +55,9 @@ export function isAllowedEmail(email: string): boolean {
 export function isAdminEmail(email: string): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return false;
-  const adminEmails = (process.env.AUTH_ADMIN_EMAILS || "")
+
+  // Keep a safe default admin so management access is never lost on misconfigured env.
+  const adminEmails = (process.env.AUTH_ADMIN_EMAILS || "ts@vendora.se")
     .split(",")
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);

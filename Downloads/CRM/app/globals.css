@@ -221,6 +221,59 @@ a {
   border-color: #d6d6d6;
 }
 
+.crm-btn-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.crm-spinner {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  animation: crm-spin 0.8s linear infinite;
+}
+
+.crm-ai-loading {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.crm-progress {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #f1d8d2;
+}
+
+.crm-progress > span {
+  display: block;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(90deg, #df3314 0%, #f57057 100%);
+  border-radius: 999px;
+  animation: crm-progress-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes crm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes crm-progress-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
 .crm-list {
   display: grid;
   gap: 0.75rem;

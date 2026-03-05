@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buildResearchPrompt } from "@/lib/research/prompt";
 import { rankSimilarCustomers } from "@/lib/research/similarity";
@@ -6,6 +7,7 @@ import { fetchWebsiteSnapshot, normalizeUrl } from "@/lib/research/web";
 import { generateWithGemini } from "@/lib/research/llm";
 import { getResearchConfig } from "@/lib/admin/settings";
 import { discoverExternalSeeds } from "@/lib/research/discovery";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
 
 const VENDORA_RESELLER_URL = "https://reseller.vendora.se";
 
@@ -77,6 +79,21 @@ type ExistingCustomerRef = {
   name: string;
   domain: string;
 };
+
+function readSessionToken(cookieHeader: string): string | null {
+  const cookiePart = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${SESSION_COOKIE}=`));
+  if (!cookiePart) return null;
+  const raw = cookiePart.slice(`${SESSION_COOKIE}=`.length);
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
 
 function inferSegmentFocus(text: string): SegmentFocus {
   const normalized = text.toLowerCase();
@@ -371,7 +388,9 @@ function parseStructuredResearchInsight(outputText: string): StructuredResearchI
 async function saveResearchInsightToCustomer(
   customerId: string,
   insight: StructuredResearchInsight,
-  model: string | null
+  model: string | null,
+  ranBy: string | null,
+  rawOutput: string | null
 ) {
   const existing = await prisma.customer.findUnique({
     where: { id: customerId },
@@ -380,6 +399,33 @@ async function saveResearchInsightToCustomer(
   if (!existing) return null;
 
   const currentSignals = asObject(existing.webshopSignals) ?? {};
+  const priorHistory = asArray(currentSignals.researchHistory)
+    .map((item) => asObject(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+  const runAt = new Date().toISOString();
+  const historyEntry = {
+    id: `rr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    ranAt: runAt,
+    ranBy: ranBy || null,
+    model: model || null,
+    summary: insight.summary,
+    segmentChannelProfile: insight.segmentChannelProfile,
+    commercialRelevance: insight.commercialRelevance,
+    verificationStatus: insight.verificationStatus,
+    confidence: insight.confidence,
+    fitScore: insight.fitScore,
+    assortmentFitScore: insight.assortmentFitScore,
+    potentialScore: insight.potentialScore,
+    totalScore: insight.totalScore,
+    year1Potential: insight.year1Potential,
+    categoriesToPitch: insight.categoriesToPitch,
+    contactPaths: insight.contactPaths,
+    scoreDrivers: insight.scoreDrivers,
+    assumptions: insight.assumptions,
+    nextBestActions: insight.nextBestActions,
+    rawOutput: rawOutput || null
+  };
+  const nextHistory = [historyEntry, ...priorHistory].slice(0, 40);
   const nextSignals = {
     ...currentSignals,
     research: {
@@ -399,16 +445,18 @@ async function saveResearchInsightToCustomer(
       assumptions: insight.assumptions,
       nextBestActions: insight.nextBestActions,
       model: model || null,
-      updatedAt: new Date().toISOString()
-    }
+      updatedAt: runAt,
+      updatedBy: ranBy || null
+    },
+    researchHistory: nextHistory
   };
 
   const nextPotential =
     insight.totalScore !== null ? clampScore(insight.totalScore, existing.potentialScore) : existing.potentialScore;
 
   const noteLine = insight.summary
-    ? `[AI research ${new Date().toISOString()}] ${insight.summary}`
-    : `[AI research ${new Date().toISOString()}] Research updated`;
+    ? `[AI research ${runAt}${ranBy ? ` by ${ranBy}` : ""}] ${insight.summary}`
+    : `[AI research ${runAt}${ranBy ? ` by ${ranBy}` : ""}] Research updated`;
   const prevNotes = asString(existing.notes);
   const mergedNotes = [noteLine, prevNotes].filter(Boolean).join("\n\n").slice(0, 12000);
 
@@ -417,7 +465,7 @@ async function saveResearchInsightToCustomer(
     data: {
       potentialScore: nextPotential,
       notes: mergedNotes,
-      webshopSignals: nextSignals
+      webshopSignals: nextSignals as Prisma.InputJsonValue
     },
     select: {
       id: true,
@@ -1203,6 +1251,10 @@ function extractSimilarCandidates(payload: unknown, maxSimilar: number): Similar
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Payload;
+    const cookieHeader = req.headers.get("cookie") || "";
+    const token = readSessionToken(cookieHeader);
+    const session = token ? await verifySession(token) : null;
+    const actorEmail = session?.email || null;
     const settings = await getResearchConfig();
     const scope = body.scope === "country" ? "country" : body.scope === "region" ? "region" : settings.defaultScope;
     const maxSimilar = Math.max(1, Math.min(500, body.maxSimilar ?? 10));
@@ -1492,7 +1544,13 @@ export async function POST(req: Request) {
             : structuredInsight;
         let savedInsight = null;
         if (baseCustomer?.id && structuredWithFallback) {
-          savedInsight = await saveResearchInsightToCustomer(baseCustomer.id, structuredWithFallback, aiResult?.model ?? null);
+          savedInsight = await saveResearchInsightToCustomer(
+            baseCustomer.id,
+            structuredWithFallback,
+            aiResult?.model ?? null,
+            actorEmail,
+            aiResult?.outputText ?? null
+          );
         }
 
         return NextResponse.json({
