@@ -243,6 +243,21 @@ type MarkdownSection = {
   body: string;
 };
 
+type JsonMap = Record<string, unknown>;
+
+type NormalizedProfileResearch = {
+  phase1ResearchSummary: JsonMap;
+  accountSummary: JsonMap;
+  scorecard: JsonMap;
+  growth: JsonMap;
+  categories: JsonMap[];
+  contactPaths: JsonMap;
+  outreachPlaybook: JsonMap;
+  dataQualityNotes: JsonMap;
+  nextBestActions: string[];
+  evidenceLog: JsonMap[];
+};
+
 type LookalikeRow = {
   rank: number;
   company: string;
@@ -273,6 +288,7 @@ type ResearchHistoryRow = {
   categories: Array<{ categoryOrBrand: string; whyItFits: string; opportunityLevel: string }>;
   nextBestActions: string[];
   rawOutput: string;
+  normalized: NormalizedProfileResearch | null;
   sourceAttribution: {
     web: Array<{ url: string; title: string | null; origins: string[] }>;
     externalSignals: Array<{ sourceType: string; url: string; title: string }>;
@@ -287,6 +303,102 @@ type ResearchHistoryRow = {
     discovery: { providers: string[]; seedCount: number } | null;
   } | null;
 };
+
+function asJsonMap(value: unknown): JsonMap | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as JsonMap;
+}
+
+function asJsonArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function asScalarText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+}
+
+function asTextArray(value: unknown): string[] {
+  return asJsonArray(value).map((item) => asText(item)).filter(Boolean);
+}
+
+function parseJsonLoose(text: string): unknown {
+  const source = String(text ?? "").trim();
+  if (!source) return null;
+  const attempts: string[] = [source];
+  const fencedJson = source.match(/```json\s*([\s\S]*?)```/i);
+  if (fencedJson?.[1]) attempts.push(fencedJson[1].trim());
+  const fencedGeneric = source.match(/```\s*([\s\S]*?)```/i);
+  if (fencedGeneric?.[1]) attempts.push(fencedGeneric[1].trim());
+
+  const firstCurly = source.indexOf("{");
+  const lastCurly = source.lastIndexOf("}");
+  if (firstCurly >= 0 && lastCurly > firstCurly) {
+    attempts.push(source.slice(firstCurly, lastCurly + 1).trim());
+  }
+
+  const uniqAttempts = Array.from(new Set(attempts.map((item) => item.replace(/,\s*([}\]])/g, "$1").trim())));
+  for (const attempt of uniqAttempts) {
+    try {
+      return JSON.parse(attempt);
+    } catch {
+      // keep trying
+    }
+  }
+  return null;
+}
+
+function normalizeProfileResearchJson(root: JsonMap | null): NormalizedProfileResearch | null {
+  if (!root) return null;
+  const phase1ResearchSummary = asJsonMap(root.phase1_research_summary) ?? {};
+  const accountSummary = asJsonMap(root.account_summary) ?? asJsonMap(root.target_account_summary) ?? {};
+  const scorecard = asJsonMap(root.vendora_fit_scorecard) ?? asJsonMap(root.vendora_match_scorecard) ?? {};
+  const growth = asJsonMap(root.growth_opportunities_for_vendora) ?? {};
+  const categories = (asJsonArray(root.recommended_categories_to_pitch).length
+    ? asJsonArray(root.recommended_categories_to_pitch)
+    : asJsonArray(root.best_categories_to_pitch)
+  )
+    .map((row) => asJsonMap(row))
+    .filter((row): row is JsonMap => Boolean(row));
+  const contactPaths = asJsonMap(root.contact_paths) ?? {};
+  const outreachPlaybook = asJsonMap(root.outreach_playbook) ?? {};
+  const dataQualityNotes = asJsonMap(root.data_quality_notes) ?? {};
+  const nextBestActions = asTextArray(root.next_best_actions);
+  const evidenceLog = asJsonArray(root.evidence_log)
+    .map((row) => asJsonMap(row))
+    .filter((row): row is JsonMap => Boolean(row));
+
+  const hasData =
+    Object.keys(phase1ResearchSummary).length > 0 ||
+    Object.keys(accountSummary).length > 0 ||
+    Object.keys(scorecard).length > 0 ||
+    Object.keys(growth).length > 0 ||
+    categories.length > 0 ||
+    Object.keys(contactPaths).length > 0 ||
+    Object.keys(outreachPlaybook).length > 0 ||
+    Object.keys(dataQualityNotes).length > 0 ||
+    nextBestActions.length > 0 ||
+    evidenceLog.length > 0;
+  if (!hasData) return null;
+
+  return {
+    phase1ResearchSummary,
+    accountSummary,
+    scorecard,
+    growth,
+    categories,
+    contactPaths,
+    outreachPlaybook,
+    dataQualityNotes,
+    nextBestActions,
+    evidenceLog
+  };
+}
 
 function parseMarkdownSections(text: string): MarkdownSection[] {
   const lines = text.split("\n");
@@ -683,6 +795,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         typeof row.ranAt === "string" && row.ranAt.trim()
           ? row.ranAt
           : customer?.updatedAt || new Date().toISOString();
+      const rawOutput = typeof row.rawOutput === "string" ? row.rawOutput : "";
+      const parsedRawOutput = normalizeProfileResearchJson(asJsonMap(parseJsonLoose(rawOutput)));
       return {
         id: typeof row.id === "string" && row.id.trim() ? row.id : `research-${index}`,
         ranAt,
@@ -711,7 +825,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         nextBestActions: nextBestActions
           .map((item) => (typeof item === "string" ? item : ""))
           .filter(Boolean),
-        rawOutput: typeof row.rawOutput === "string" ? row.rawOutput : "",
+        rawOutput,
+        normalized: parsedRawOutput,
         sourceAttribution: sourceAttributionRaw
           ? {
               web: sourceWeb
@@ -1680,6 +1795,140 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 </p>
                 {entry.commercialRelevance ? (
                   <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>{entry.commercialRelevance}</p>
+                ) : null}
+                {entry.normalized ? (
+                  <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                    {Object.keys(entry.normalized.accountSummary).length > 0 ? (
+                      <article className="crm-item">
+                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Kontoöversikt (från JSON)" : "Account summary (from JSON)"}</h4>
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                          <strong>{lang === "sv" ? "Legal name" : "Legal name"}:</strong> {asText(entry.normalized.accountSummary.legal_name) || "-"}
+                        </p>
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                          <strong>{lang === "sv" ? "Webbplats" : "Website"}:</strong>{" "}
+                          {asText(entry.normalized.accountSummary.website) ? (
+                            <a href={asText(entry.normalized.accountSummary.website)} target="_blank" rel="noreferrer" className="crm-link-inline">
+                              {asText(entry.normalized.accountSummary.website)}
+                            </a>
+                          ) : (
+                            "-"
+                          )}
+                        </p>
+                        <p style={{ marginTop: "0.35rem" }}>
+                          <strong>{lang === "sv" ? "Summary" : "Summary"}:</strong> {asText(entry.normalized.accountSummary.summary) || entry.summary || "-"}
+                        </p>
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                          <strong>{lang === "sv" ? "Commercial relevance" : "Commercial relevance"}:</strong>{" "}
+                          {asText(entry.normalized.accountSummary.commercial_relevance_for_vendora) || entry.commercialRelevance || "-"}
+                        </p>
+                        {asTextArray(entry.normalized.accountSummary.segment_channel_profile).length > 0 ? (
+                          <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                            {asTextArray(entry.normalized.accountSummary.segment_channel_profile).slice(0, 12).map((row, index) => (
+                              <li key={`${entry.id}-profile-${index}`}>{row}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </article>
+                    ) : null}
+
+                    {Object.keys(entry.normalized.scorecard).length > 0 ? (
+                      <article className="crm-item">
+                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Fit scorecard (från JSON)" : "Fit scorecard (from JSON)"}</h4>
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                          Fit: {asScalarText(entry.normalized.scorecard.fit_score) || String(entry.fitScore ?? "-")} ·{" "}
+                          {lang === "sv" ? "Sortimentsfit" : "Assortment fit"}:{" "}
+                          {asScalarText(entry.normalized.scorecard.assortment_fit_score) || asScalarText(entry.normalized.scorecard.fit_score) || String(entry.assortmentFitScore ?? "-")} ·{" "}
+                          {lang === "sv" ? "Potential" : "Potential"}: {asScalarText(entry.normalized.scorecard.potential_score) || String(entry.potentialScore ?? "-")} · Total:{" "}
+                          {asScalarText(entry.normalized.scorecard.total_score) || String(entry.totalScore ?? "-")}
+                        </p>
+                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                          Y1: {asText(asJsonMap(entry.normalized.scorecard.year_1_purchase_potential)?.low) || entry.year1Low || "-"} /{" "}
+                          {asText(asJsonMap(entry.normalized.scorecard.year_1_purchase_potential)?.base) || entry.year1Base || "-"} /{" "}
+                          {asText(asJsonMap(entry.normalized.scorecard.year_1_purchase_potential)?.high) || entry.year1High || "-"}{" "}
+                          {asText(asJsonMap(entry.normalized.scorecard.year_1_purchase_potential)?.currency) || entry.year1Currency || ""}
+                        </p>
+                        {asTextArray(entry.normalized.scorecard.score_drivers).length > 0 ? (
+                          <>
+                            <h5 style={{ marginTop: "0.45rem", marginBottom: 0 }}>{lang === "sv" ? "Scoredrivare" : "Score drivers"}</h5>
+                            <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                              {asTextArray(entry.normalized.scorecard.score_drivers).slice(0, 10).map((row, index) => (
+                                <li key={`${entry.id}-driver-${index}`}>{row}</li>
+                              ))}
+                            </ul>
+                          </>
+                        ) : null}
+                      </article>
+                    ) : null}
+
+                    {entry.normalized.categories.length > 0 ? (
+                      <article className="crm-item">
+                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Prioriterade kategorier (från JSON)" : "Priority categories (from JSON)"}</h4>
+                        <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                          {entry.normalized.categories.slice(0, 12).map((category, index) => (
+                            <li key={`${entry.id}-json-cat-${index}`}>
+                              <strong>{asText(category.category_or_brand) || "-"}</strong>
+                              {asText(category.why_it_fits) ? ` - ${asText(category.why_it_fits)}` : ""}
+                              {asText(category.opportunity_level) ? ` | ${asText(category.opportunity_level)}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    ) : null}
+
+                    {Object.keys(entry.normalized.contactPaths).length > 0 ? (
+                      <article className="crm-item">
+                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Kontaktvägar (från JSON)" : "Contact paths (from JSON)"}</h4>
+                        {asJsonArray(entry.normalized.contactPaths.role_based_paths).length > 0 ? (
+                          <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                            {asJsonArray(entry.normalized.contactPaths.role_based_paths)
+                              .map((row) => asJsonMap(row))
+                              .filter((row): row is JsonMap => Boolean(row))
+                              .slice(0, 8)
+                              .map((row, index) => (
+                                <li key={`${entry.id}-json-path-${index}`}>
+                                  <strong>{asText(row.function) || "-"}</strong>
+                                  {asText(row.why_relevant) ? ` - ${asText(row.why_relevant)}` : ""}
+                                  {asText(row.likely_entry_path) ? ` | ${asText(row.likely_entry_path)}` : ""}
+                                  {asText(row.contact_method) ? ` | ${asText(row.contact_method)}` : ""}
+                                </li>
+                              ))}
+                          </ul>
+                        ) : null}
+                      </article>
+                    ) : null}
+
+                    {entry.normalized.nextBestActions.length > 0 ? (
+                      <article className="crm-item">
+                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Nästa steg (från JSON)" : "Next best actions (from JSON)"}</h4>
+                        <ol style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                          {entry.normalized.nextBestActions.slice(0, 12).map((action, index) => (
+                            <li key={`${entry.id}-json-step-${index}`}>{action}</li>
+                          ))}
+                        </ol>
+                      </article>
+                    ) : null}
+
+                    {entry.normalized.evidenceLog.length > 0 ? (
+                      <article className="crm-item">
+                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Källor (evidence log)" : "Sources (evidence log)"}</h4>
+                        <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                          {entry.normalized.evidenceLog.slice(0, 20).map((item, index) => (
+                            <li key={`${entry.id}-evidence-${index}`}>
+                              {asText(item.source_url) ? (
+                                <a href={asText(item.source_url)} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                  {asText(item.source_url)}
+                                </a>
+                              ) : (
+                                <span>-</span>
+                              )}{" "}
+                              · {asText(item.source_type) || "other"}
+                              {asText(item.evidence_snippet) ? ` · ${asText(item.evidence_snippet)}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    ) : null}
+                  </div>
                 ) : null}
                 <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
                   Fit: {entry.fitScore ?? "-"} · {lang === "sv" ? "Sortimentsfit" : "Assortment fit"}: {entry.assortmentFitScore ?? "-"} ·{" "}
