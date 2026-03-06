@@ -61,6 +61,16 @@ type CompanySignal = {
   sourceType: "serper" | "tavily";
 };
 
+type ContactSignal = {
+  name: string;
+  role: string;
+  sourceUrl: string;
+  sourceType: "serper" | "tavily";
+  snippet: string;
+  confidence: "High" | "Medium" | "Low";
+  verificationStatus: "Verified" | "NeedsValidation";
+};
+
 type WebsiteSourceAttribution = {
   url: string;
   title: string | null;
@@ -70,6 +80,14 @@ type WebsiteSourceAttribution = {
 type ResearchSourceAttribution = {
   web?: WebsiteSourceAttribution[];
   externalSignals?: Array<{ sourceType?: string; url?: string; title?: string }>;
+  contacts?: Array<{
+    name?: string;
+    role?: string;
+    sourceUrl?: string;
+    sourceType?: string;
+    confidence?: string;
+    verificationStatus?: string;
+  }>;
   crm?: {
     contactsCount?: number;
     plansCount?: number;
@@ -1254,6 +1272,128 @@ function isLikelyCompanyCandidateName(value: string): boolean {
   return /[a-zåäö]/i.test(name);
 }
 
+const CONTACT_ROLE_PATTERNS: Array<{ role: string; pattern: RegExp }> = [
+  { role: "Purchasing Manager", pattern: /\b(inköpschef|inkopschef|purchasing manager|head of purchasing|procurement manager)\b/i },
+  { role: "Category Manager", pattern: /\b(kategorichef|category manager|sortimentsansvarig|assortment manager)\b/i },
+  { role: "Head of E-commerce", pattern: /\b(e-handelschef|head of e-?commerce|ecommerce manager|online manager)\b/i },
+  { role: "CEO / Managing Director", pattern: /\b(vd|ceo|managing director|chief executive)\b/i },
+  { role: "Procurement", pattern: /\b(procurement|sourcing|inköp|inkop)\b/i }
+];
+
+function inferContactRole(text: string): string | null {
+  const input = String(text ?? "");
+  for (const row of CONTACT_ROLE_PATTERNS) {
+    if (row.pattern.test(input)) return row.role;
+  }
+  return null;
+}
+
+function extractLikelyPersonName(text: string, companyName: string): string | null {
+  const source = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!source) return null;
+  const companyNeedle = normalizeCompanyName(companyName);
+  const candidates = source
+    .split(/[\-|–|•|·|\||,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+  for (const candidate of candidates) {
+    const normalized = normalizeCompanyName(candidate);
+    if (!normalized || normalized.includes(companyNeedle) || companyNeedle.includes(normalized)) continue;
+    if (/\b(linkedin|contact|about|profile|team|company|jobb|job|careers?)\b/i.test(candidate)) continue;
+    const match = candidate.match(/\b([A-ZÅÄÖ][a-zåäö]+(?:\s+[A-ZÅÄÖ][a-zåäö]+){1,2})\b/);
+    if (!match?.[1]) continue;
+    const name = match[1].trim();
+    if (name.split(" ").length < 2) continue;
+    return name;
+  }
+  return null;
+}
+
+function isTrustedContactDomain(url: string): boolean {
+  const domain = toDomain(url);
+  if (!domain) return false;
+  const trusted = [
+    "linkedin.com",
+    "allabolag.se",
+    "bolagsverket.se",
+    "proff.se",
+    "proff.no",
+    "proff.dk",
+    "virk.dk"
+  ];
+  return trusted.some((item) => domain === item || domain.endsWith(`.${item}`));
+}
+
+async function discoverCompanyContacts(input: {
+  companyName: string;
+  country?: string | null;
+  organizationNumber?: string | null;
+  website?: string | null;
+  maxResults?: number;
+}): Promise<ContactSignal[]> {
+  const maxResults = Math.min(20, Math.max(6, input.maxResults ?? 12));
+  const countryToken = String(input.country ?? "").trim();
+  const orgToken = String(input.organizationNumber ?? "").trim();
+  const websiteDomain = toDomain(input.website);
+  const queries = [
+    `"${input.companyName}" inköpschef linkedin`,
+    `"${input.companyName}" category manager linkedin`,
+    `"${input.companyName}" e-commerce manager linkedin`,
+    `"${input.companyName}" ceo linkedin`,
+    `"${input.companyName}" ${countryToken} ${orgToken} board allabolag proff`
+  ]
+    .map((query) => query.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 6);
+
+  const all = (
+    await Promise.all(
+      queries.map(async (query) => {
+        const [serper, tavily] = await Promise.all([
+          fetchSerperCompanySignals(query, maxResults),
+          fetchTavilyCompanySignals(query, maxResults)
+        ]);
+        return [...serper, ...tavily];
+      })
+    )
+  ).flat();
+
+  const seen = new Set<string>();
+  const out: ContactSignal[] = [];
+  for (const row of all) {
+    const sourceUrl = normalizeSearchUrl(row.url);
+    if (!sourceUrl) continue;
+    const role = inferContactRole(`${row.title} ${row.snippet}`);
+    if (!role) continue;
+    const name = extractLikelyPersonName(`${row.title} ${row.snippet}`, input.companyName);
+    if (!name) continue;
+
+    const urlDomain = toDomain(sourceUrl);
+    const directCompanyHint = Boolean(websiteDomain && urlDomain === websiteDomain);
+    const trustedDomain = isTrustedContactDomain(sourceUrl);
+    const confidence: ContactSignal["confidence"] = trustedDomain || directCompanyHint ? "High" : "Medium";
+    const verificationStatus: ContactSignal["verificationStatus"] =
+      trustedDomain || directCompanyHint ? "Verified" : "NeedsValidation";
+
+    const key = `${normalizeCompanyName(name)}:${normalizeCompanyName(role)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    out.push({
+      name,
+      role,
+      sourceUrl,
+      sourceType: row.sourceType,
+      snippet: row.snippet,
+      confidence,
+      verificationStatus
+    });
+    if (out.length >= maxResults) break;
+  }
+  return out;
+}
+
 async function fetchSerperCompanySignals(query: string, maxResults: number): Promise<CompanySignal[]> {
   const apiKey = process.env.SERPER_API_KEY?.trim();
   if (!apiKey) return [];
@@ -1644,6 +1784,13 @@ export async function POST(req: Request) {
           blockedDomains: settings.blockedSourceDomains,
           preferredDomains: settings.preferredSourceDomains
         });
+        const discoveredContacts = await discoverCompanyContacts({
+          companyName,
+          country,
+          organizationNumber: baseCustomer?.organization ?? null,
+          website: baseCustomer?.website ?? null,
+          maxResults: 16
+        });
         const customerResearchContext = baseCustomer?.id ? await loadCustomerResearchContext(baseCustomer.id) : null;
         const mergedExtraInstructions = [settings.extraInstructions, body.extraInstructions]
           .map((value) => String(value ?? "").trim())
@@ -1730,9 +1877,12 @@ export async function POST(req: Request) {
             size_signals: companySignals
               .map((signal) => signal.snippet)
               .filter((snippet) => /(revenue|omsättning|employees|anställda|turnover|stores)/i.test(snippet)),
-            contact_signals: companySignals
-              .map((signal) => signal.snippet)
-              .filter((snippet) => /(buyer|procurement|category manager|inköp|inkop|business sales)/i.test(snippet)),
+            contact_signals: {
+              verified_named_contacts: discoveredContacts,
+              role_signal_snippets: companySignals
+                .map((signal) => signal.snippet)
+                .filter((snippet) => /(buyer|procurement|category manager|inköp|inkop|business sales|e-commerce manager|ceo|vd)/i.test(snippet))
+            },
             internal_notes: [baseCustomer?.notes].filter(Boolean)
           },
           filters: {
@@ -1885,6 +2035,14 @@ export async function POST(req: Request) {
             url: signal.url,
             title: signal.title
           })),
+          contacts: discoveredContacts.map((contact) => ({
+            name: contact.name,
+            role: contact.role,
+            sourceUrl: contact.sourceUrl,
+            sourceType: contact.sourceType,
+            confidence: contact.confidence,
+            verificationStatus: contact.verificationStatus
+          })),
           crm: customerResearchContext
             ? {
                 contactsCount: customerResearchContext.contacts.length,
@@ -1923,6 +2081,7 @@ export async function POST(req: Request) {
           },
           websiteSnapshots,
           companySignals,
+          companyContactSignals: discoveredContacts,
           similarCustomers: [],
           structuredInsight: structuredWithFallback,
           localAssortmentFitScore,

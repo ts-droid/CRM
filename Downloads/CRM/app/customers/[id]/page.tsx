@@ -292,6 +292,14 @@ type ResearchHistoryRow = {
   sourceAttribution: {
     web: Array<{ url: string; title: string | null; origins: string[] }>;
     externalSignals: Array<{ sourceType: string; url: string; title: string }>;
+    contacts: Array<{
+      name: string;
+      role: string;
+      sourceUrl: string;
+      sourceType: string;
+      confidence: string;
+      verificationStatus: string;
+    }>;
     crm: {
       contactsCount: number;
       plansCount: number;
@@ -785,6 +793,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       const sourceExternalSignals = Array.isArray(sourceAttributionRaw?.externalSignals)
         ? sourceAttributionRaw.externalSignals
         : [];
+      const sourceContacts = Array.isArray(sourceAttributionRaw?.contacts) ? sourceAttributionRaw.contacts : [];
       const sourceCrm = sourceAttributionRaw?.crm && typeof sourceAttributionRaw.crm === "object"
         ? (sourceAttributionRaw.crm as Record<string, unknown>)
         : null;
@@ -849,6 +858,18 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   title: typeof item.title === "string" ? item.title : ""
                 }))
                 .filter((item) => item.url || item.title),
+              contacts: sourceContacts
+                .map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>) : null))
+                .filter((item): item is Record<string, unknown> => Boolean(item))
+                .map((item) => ({
+                  name: typeof item.name === "string" ? item.name : "",
+                  role: typeof item.role === "string" ? item.role : "",
+                  sourceUrl: typeof item.sourceUrl === "string" ? item.sourceUrl : "",
+                  sourceType: typeof item.sourceType === "string" ? item.sourceType : "external",
+                  confidence: typeof item.confidence === "string" ? item.confidence : "",
+                  verificationStatus: typeof item.verificationStatus === "string" ? item.verificationStatus : "NeedsValidation"
+                }))
+                .filter((item) => item.name || item.sourceUrl || item.role),
               crm: sourceCrm
                 ? {
                     contactsCount: Number(sourceCrm.contactsCount ?? 0),
@@ -2007,6 +2028,31 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                                 <span>{signal.title || "-"}</span>
                               )}{" "}
                               · {signal.sourceType || "external"}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {entry.sourceAttribution.contacts.length > 0 ? (
+                      <>
+                        <p className="crm-subtle" style={{ marginTop: "0.45rem", marginBottom: "0.25rem" }}>
+                          {lang === "sv" ? "Kontaktspår (auto)" : "Contact signals (auto)"}
+                        </p>
+                        <ul style={{ marginTop: 0, paddingLeft: "1.1rem" }}>
+                          {entry.sourceAttribution.contacts.slice(0, 25).map((contact, index) => (
+                            <li key={`${entry.id}-source-contact-${index}`} style={{ marginBottom: "0.3rem" }}>
+                              <strong>{contact.name || (lang === "sv" ? "Okänt namn" : "Unknown name")}</strong>
+                              {contact.role ? ` · ${contact.role}` : ""} ·{" "}
+                              {lang === "sv" ? "Säkerhet" : "Confidence"}: {contact.confidence || "-"} ·{" "}
+                              {lang === "sv" ? "Status" : "Status"}: {contact.verificationStatus || "NeedsValidation"}
+                              {contact.sourceUrl ? (
+                                <>
+                                  {" · "}
+                                  <a href={contact.sourceUrl} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                    {contact.sourceType || "source"}
+                                  </a>
+                                </>
+                              ) : null}
                             </li>
                           ))}
                         </ul>

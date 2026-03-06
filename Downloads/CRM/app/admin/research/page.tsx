@@ -45,9 +45,25 @@ type ResearchResponse = {
   aiPrompt: string;
   usedExtraInstructions?: string | null;
   companySignals?: Array<{ title: string; url: string; snippet: string; sourceType: string }> | null;
+  companyContactSignals?: Array<{
+    name: string;
+    role: string;
+    sourceUrl: string;
+    sourceType: string;
+    confidence: string;
+    verificationStatus: string;
+  }> | null;
   sourceAttribution?: {
     web?: Array<{ url: string; title?: string | null; origins?: string[] }>;
     externalSignals?: Array<{ sourceType?: string; url?: string; title?: string }>;
+    contacts?: Array<{
+      name?: string;
+      role?: string;
+      sourceUrl?: string;
+      sourceType?: string;
+      confidence?: string;
+      verificationStatus?: string;
+    }>;
     crm?: {
       contactsCount?: number;
       plansCount?: number;
@@ -1771,6 +1787,29 @@ function ResearchAdminContent() {
                               </ul>
                             </>
                           ) : null}
+                          {Array.isArray(result.sourceAttribution.contacts) && result.sourceAttribution.contacts.length > 0 ? (
+                            <>
+                              <h5 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Kontaktspår (auto)" : "Contact signals (auto)"}</h5>
+                              <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                {result.sourceAttribution.contacts.slice(0, 25).map((contact, index) => (
+                                  <li key={`${contact.sourceUrl || contact.name || "contact"}-${index}`}>
+                                    <strong>{contact.name || (lang === "sv" ? "Okänt namn" : "Unknown name")}</strong>
+                                    {contact.role ? ` | ${contact.role}` : ""}
+                                    {contact.confidence ? ` | ${lang === "sv" ? "Confidence" : "Confidence"}: ${contact.confidence}` : ""}
+                                    {contact.verificationStatus ? ` | ${lang === "sv" ? "Status" : "Status"}: ${contact.verificationStatus}` : ""}
+                                    {contact.sourceUrl ? (
+                                      <>
+                                        {" | "}
+                                        <a href={contact.sourceUrl} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                          {contact.sourceType || "source"}
+                                        </a>
+                                      </>
+                                    ) : null}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
                           {result.sourceAttribution.crm ? (
                             <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
                               <strong>CRM:</strong>{" "}
@@ -2063,6 +2102,26 @@ function ResearchAdminContent() {
                           {lang === "sv" ? "Ingen extern källa loggad ännu." : "No external source logged yet."}
                         </p>
                       )}
+                      {Array.isArray(result.sourceAttribution.contacts) && result.sourceAttribution.contacts.length > 0 ? (
+                        <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                          {result.sourceAttribution.contacts.slice(0, 30).map((contact, index) => (
+                            <article className="crm-item" key={`${contact.sourceUrl || contact.name || "contact"}-${index}`}>
+                              <div className="crm-item-head">
+                                <strong>{contact.name || (lang === "sv" ? "Okänt namn" : "Unknown name")}</strong>
+                                <span className="crm-badge">{contact.verificationStatus || "NeedsValidation"}</span>
+                              </div>
+                              <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+                                {contact.role || "-"} · {lang === "sv" ? "Säkerhet" : "Confidence"}: {contact.confidence || "-"}
+                              </p>
+                              {contact.sourceUrl ? (
+                                <a href={contact.sourceUrl} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                  {contact.sourceType || "source"} · {contact.sourceUrl}
+                                </a>
+                              ) : null}
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
                       {result.sourceAttribution.discovery ? (
                         <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>
                           Providers: {(result.sourceAttribution.discovery.providers || []).join(", ") || "-"} · Seed candidates:{" "}
