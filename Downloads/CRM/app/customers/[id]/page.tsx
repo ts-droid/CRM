@@ -273,6 +273,19 @@ type ResearchHistoryRow = {
   categories: Array<{ categoryOrBrand: string; whyItFits: string; opportunityLevel: string }>;
   nextBestActions: string[];
   rawOutput: string;
+  sourceAttribution: {
+    web: Array<{ url: string; title: string | null; origins: string[] }>;
+    externalSignals: Array<{ sourceType: string; url: string; title: string }>;
+    crm: {
+      contactsCount: number;
+      plansCount: number;
+      activitiesCount: number;
+      salesRecordsCount: number;
+      hasPriorResearch: boolean;
+      customerUpdatedAt: string | null;
+    } | null;
+    discovery: { providers: string[]; seedCount: number } | null;
+  } | null;
 };
 
 function parseMarkdownSections(text: string): MarkdownSection[] {
@@ -653,6 +666,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         : null;
       const categories = Array.isArray(row.categoriesToPitch) ? row.categoriesToPitch : [];
       const nextBestActions = Array.isArray(row.nextBestActions) ? row.nextBestActions : [];
+      const sourceAttributionRaw = row.sourceAttribution && typeof row.sourceAttribution === "object"
+        ? (row.sourceAttribution as Record<string, unknown>)
+        : null;
+      const sourceWeb = Array.isArray(sourceAttributionRaw?.web) ? sourceAttributionRaw.web : [];
+      const sourceExternalSignals = Array.isArray(sourceAttributionRaw?.externalSignals)
+        ? sourceAttributionRaw.externalSignals
+        : [];
+      const sourceCrm = sourceAttributionRaw?.crm && typeof sourceAttributionRaw.crm === "object"
+        ? (sourceAttributionRaw.crm as Record<string, unknown>)
+        : null;
+      const sourceDiscovery = sourceAttributionRaw?.discovery && typeof sourceAttributionRaw.discovery === "object"
+        ? (sourceAttributionRaw.discovery as Record<string, unknown>)
+        : null;
       const ranAt =
         typeof row.ranAt === "string" && row.ranAt.trim()
           ? row.ranAt
@@ -685,7 +711,49 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         nextBestActions: nextBestActions
           .map((item) => (typeof item === "string" ? item : ""))
           .filter(Boolean),
-        rawOutput: typeof row.rawOutput === "string" ? row.rawOutput : ""
+        rawOutput: typeof row.rawOutput === "string" ? row.rawOutput : "",
+        sourceAttribution: sourceAttributionRaw
+          ? {
+              web: sourceWeb
+                .map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>) : null))
+                .filter((item): item is Record<string, unknown> => Boolean(item))
+                .map((item) => ({
+                  url: typeof item.url === "string" ? item.url : "",
+                  title: typeof item.title === "string" ? item.title : null,
+                  origins: Array.isArray(item.origins)
+                    ? item.origins.map((origin) => String(origin)).filter(Boolean)
+                    : []
+                }))
+                .filter((item) => item.url),
+              externalSignals: sourceExternalSignals
+                .map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>) : null))
+                .filter((item): item is Record<string, unknown> => Boolean(item))
+                .map((item) => ({
+                  sourceType: typeof item.sourceType === "string" ? item.sourceType : "external",
+                  url: typeof item.url === "string" ? item.url : "",
+                  title: typeof item.title === "string" ? item.title : ""
+                }))
+                .filter((item) => item.url || item.title),
+              crm: sourceCrm
+                ? {
+                    contactsCount: Number(sourceCrm.contactsCount ?? 0),
+                    plansCount: Number(sourceCrm.plansCount ?? 0),
+                    activitiesCount: Number(sourceCrm.activitiesCount ?? 0),
+                    salesRecordsCount: Number(sourceCrm.salesRecordsCount ?? 0),
+                    hasPriorResearch: Boolean(sourceCrm.hasPriorResearch),
+                    customerUpdatedAt: typeof sourceCrm.customerUpdatedAt === "string" ? sourceCrm.customerUpdatedAt : null
+                  }
+                : null,
+              discovery: sourceDiscovery
+                ? {
+                    providers: Array.isArray(sourceDiscovery.providers)
+                      ? sourceDiscovery.providers.map((provider) => String(provider)).filter(Boolean)
+                      : [],
+                    seedCount: Number(sourceDiscovery.seedCount ?? 0)
+                  }
+                : null
+            }
+          : null
       } satisfies ResearchHistoryRow;
     })
     .filter((row): row is ResearchHistoryRow => Boolean(row))
@@ -1650,6 +1718,68 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                       {lang === "sv" ? "Visa rå AI-output" : "Show raw AI output"}
                     </summary>
                     <pre className="crm-pre" style={{ marginTop: "0.45rem" }}>{entry.rawOutput}</pre>
+                  </details>
+                ) : null}
+                {entry.sourceAttribution ? (
+                  <details style={{ marginTop: "0.55rem" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                      {lang === "sv" ? "Källhänvisning" : "Source attribution"}
+                    </summary>
+                    {entry.sourceAttribution.web.length > 0 ? (
+                      <>
+                        <p className="crm-subtle" style={{ marginTop: "0.45rem", marginBottom: "0.25rem" }}>
+                          {lang === "sv" ? "Webbkällor" : "Web sources"}
+                        </p>
+                        <ul style={{ marginTop: 0, paddingLeft: "1.1rem" }}>
+                          {entry.sourceAttribution.web.slice(0, 20).map((source, index) => (
+                            <li key={`${entry.id}-source-web-${index}`} style={{ marginBottom: "0.3rem" }}>
+                              <a href={source.url} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                {source.title || source.url}
+                              </a>
+                              {source.origins.length > 0 ? ` · ${source.origins.join(", ")}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {entry.sourceAttribution.externalSignals.length > 0 ? (
+                      <>
+                        <p className="crm-subtle" style={{ marginTop: "0.45rem", marginBottom: "0.25rem" }}>
+                          {lang === "sv" ? "Externa signaler/API" : "External signals/APIs"}
+                        </p>
+                        <ul style={{ marginTop: 0, paddingLeft: "1.1rem" }}>
+                          {entry.sourceAttribution.externalSignals.slice(0, 30).map((signal, index) => (
+                            <li key={`${entry.id}-source-ext-${index}`} style={{ marginBottom: "0.3rem" }}>
+                              {signal.url ? (
+                                <a href={signal.url} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                  {signal.title || signal.url}
+                                </a>
+                              ) : (
+                                <span>{signal.title || "-"}</span>
+                              )}{" "}
+                              · {signal.sourceType || "external"}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {entry.sourceAttribution.crm ? (
+                      <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+                        CRM: contacts {entry.sourceAttribution.crm.contactsCount}, plans {entry.sourceAttribution.crm.plansCount}, activities{" "}
+                        {entry.sourceAttribution.crm.activitiesCount}, sales {entry.sourceAttribution.crm.salesRecordsCount} ·{" "}
+                        {lang === "sv" ? "tidigare research" : "prior research"}:{" "}
+                        {entry.sourceAttribution.crm.hasPriorResearch ? (lang === "sv" ? "ja" : "yes") : (lang === "sv" ? "nej" : "no")}
+                        {entry.sourceAttribution.crm.customerUpdatedAt
+                          ? ` · ${lang === "sv" ? "senast uppdaterad" : "updated"}: ${new Date(entry.sourceAttribution.crm.customerUpdatedAt).toLocaleString()}`
+                          : ""}
+                      </p>
+                    ) : null}
+                    {entry.sourceAttribution.discovery ? (
+                      <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                        Discovery providers: {(entry.sourceAttribution.discovery.providers || []).join(", ") || "-"} · Seed candidates:{" "}
+                        {entry.sourceAttribution.discovery.seedCount}
+                      </p>
+                    ) : null}
                   </details>
                 ) : null}
               </article>

@@ -60,6 +60,29 @@ type CompanySignal = {
   snippet: string;
   sourceType: "serper" | "tavily";
 };
+
+type WebsiteSourceAttribution = {
+  url: string;
+  title: string | null;
+  origins: string[];
+};
+
+type ResearchSourceAttribution = {
+  web?: WebsiteSourceAttribution[];
+  externalSignals?: Array<{ sourceType?: string; url?: string; title?: string }>;
+  crm?: {
+    contactsCount?: number;
+    plansCount?: number;
+    activitiesCount?: number;
+    salesRecordsCount?: number;
+    hasPriorResearch?: boolean;
+    customerUpdatedAt?: string | null;
+  } | null;
+  discovery?: {
+    providers?: string[];
+    seedCount?: number;
+  } | null;
+};
 type MinimalCustomer = {
   id: string;
   name: string;
@@ -72,6 +95,62 @@ type MinimalCustomer = {
   potentialScore: number;
   website?: string | null;
   webshopSignals?: unknown;
+};
+
+type CustomerResearchContext = {
+  customer: {
+    id: string;
+    name: string;
+    organization: string | null;
+    country: string | null;
+    region: string | null;
+    industry: string | null;
+    seller: string | null;
+    website: string | null;
+    potentialScore: number;
+    notes: string | null;
+    updatedAt: string;
+  } | null;
+  contacts: Array<{
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+    department: string | null;
+    title: string | null;
+    role: string | null;
+    notes: string | null;
+    updatedAt: string;
+  }>;
+  plans: Array<{
+    title: string;
+    description: string | null;
+    status: string;
+    priority: string;
+    owner: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    updatedAt: string;
+  }>;
+  activities: Array<{
+    type: string;
+    message: string;
+    actorName: string | null;
+    createdAt: string;
+    metadata: unknown;
+  }>;
+  salesRecords: Array<{
+    source: string;
+    periodStart: string;
+    periodEnd: string;
+    currency: string;
+    netSales: number | null;
+    grossMargin: number | null;
+    unitsSold: number | null;
+    ordersCount: number | null;
+    updatedAt: string;
+  }>;
+  priorResearch: Record<string, unknown> | null;
 };
 
 type ExistingCustomerRef = {
@@ -424,12 +503,26 @@ function parseStructuredResearchInsight(outputText: string): StructuredResearchI
   return insight;
 }
 
+function hasRequiredDeepProfileShape(outputText: string): boolean {
+  const parsed = extractJsonValue(outputText);
+  const root = asObject(parsed);
+  if (!root) return false;
+  const accountSummary = asObject(root.account_summary) ?? asObject(root.target_account_summary);
+  const scorecard = asObject(root.vendora_fit_scorecard) ?? asObject(root.vendora_match_scorecard);
+  const categories = asArray(root.recommended_categories_to_pitch).length
+    ? asArray(root.recommended_categories_to_pitch)
+    : asArray(root.best_categories_to_pitch);
+  const nextBestActions = asArray(root.next_best_actions);
+  return Boolean(accountSummary) && Boolean(scorecard) && categories.length > 0 && nextBestActions.length > 0;
+}
+
 async function saveResearchInsightToCustomer(
   customerId: string,
   insight: StructuredResearchInsight,
   model: string | null,
   ranBy: string | null,
-  rawOutput: string | null
+  rawOutput: string | null,
+  sourceAttribution: ResearchSourceAttribution | null = null
 ) {
   const existing = await prisma.customer.findUnique({
     where: { id: customerId },
@@ -462,7 +555,8 @@ async function saveResearchInsightToCustomer(
     scoreDrivers: insight.scoreDrivers,
     assumptions: insight.assumptions,
     nextBestActions: insight.nextBestActions,
-    rawOutput: rawOutput || null
+    rawOutput: rawOutput || null,
+    sourceAttribution: sourceAttribution || null
   };
   const nextHistory = [historyEntry, ...priorHistory].slice(0, 40);
   const nextSignals = {
@@ -483,6 +577,7 @@ async function saveResearchInsightToCustomer(
       scoreDrivers: insight.scoreDrivers,
       assumptions: insight.assumptions,
       nextBestActions: insight.nextBestActions,
+      sourceAttribution: sourceAttribution || null,
       model: model || null,
       updatedAt: runAt,
       updatedBy: ranBy || null
@@ -514,6 +609,128 @@ async function saveResearchInsightToCustomer(
       updatedAt: true
     }
   });
+}
+
+async function loadCustomerResearchContext(customerId: string): Promise<CustomerResearchContext | null> {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: {
+      id: true,
+      name: true,
+      organization: true,
+      country: true,
+      region: true,
+      industry: true,
+      seller: true,
+      website: true,
+      potentialScore: true,
+      notes: true,
+      updatedAt: true,
+      webshopSignals: true
+    }
+  });
+  if (!customer) return null;
+
+  const [contacts, plans, activities, salesRecords] = await Promise.all([
+    prisma.contact.findMany({
+      where: { customerId },
+      orderBy: { updatedAt: "desc" },
+      take: 30,
+      select: {
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        department: true,
+        title: true,
+        role: true,
+        notes: true,
+        updatedAt: true
+      }
+    }),
+    prisma.plan.findMany({
+      where: { customerId },
+      orderBy: [{ updatedAt: "desc" }],
+      take: 40,
+      select: {
+        title: true,
+        description: true,
+        status: true,
+        priority: true,
+        owner: true,
+        startDate: true,
+        endDate: true,
+        updatedAt: true
+      }
+    }),
+    prisma.activity.findMany({
+      where: { customerId },
+      orderBy: { createdAt: "desc" },
+      take: 60,
+      select: {
+        type: true,
+        message: true,
+        actorName: true,
+        createdAt: true,
+        metadata: true
+      }
+    }),
+    prisma.salesRecord.findMany({
+      where: { customerId },
+      orderBy: { periodEnd: "desc" },
+      take: 24,
+      select: {
+        source: true,
+        periodStart: true,
+        periodEnd: true,
+        currency: true,
+        netSales: true,
+        grossMargin: true,
+        unitsSold: true,
+        ordersCount: true,
+        updatedAt: true
+      }
+    })
+  ]);
+
+  const priorResearch = asObject(asObject(customer.webshopSignals)?.research) ?? null;
+
+  return {
+    customer: {
+      id: customer.id,
+      name: customer.name,
+      organization: customer.organization,
+      country: customer.country,
+      region: customer.region,
+      industry: customer.industry,
+      seller: customer.seller,
+      website: customer.website,
+      potentialScore: customer.potentialScore,
+      notes: customer.notes,
+      updatedAt: customer.updatedAt.toISOString()
+    },
+    contacts: contacts.map((row) => ({ ...row, updatedAt: row.updatedAt.toISOString() })),
+    plans: plans.map((row) => ({
+      ...row,
+      status: row.status,
+      priority: row.priority,
+      startDate: row.startDate ? row.startDate.toISOString() : null,
+      endDate: row.endDate ? row.endDate.toISOString() : null,
+      updatedAt: row.updatedAt.toISOString()
+    })),
+    activities: activities.map((row) => ({
+      ...row,
+      type: row.type,
+      createdAt: row.createdAt.toISOString()
+    })),
+    salesRecords: salesRecords.map((row) => ({
+      ...row,
+      periodStart: row.periodStart.toISOString(),
+      periodEnd: row.periodEnd.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    })),
+    priorResearch
+  };
 }
 
 function registryHintsForCountry(country: string | null): string[] {
@@ -1360,20 +1577,30 @@ export async function POST(req: Request) {
       ...settings.brandWebsites
     ], 20);
 
+    const customerWebsiteSet = new Set<string>();
+    const vendoraWebsiteSet = new Set<string>();
+    const manualWebsiteSet = new Set<string>();
     const urlSet = new Set<string>();
-    if (baseCustomer?.website) urlSet.add(normalizeUrl(baseCustomer.website));
+    if (baseCustomer?.website) {
+      const normalized = normalizeUrl(baseCustomer.website);
+      urlSet.add(normalized);
+      customerWebsiteSet.add(normalized);
+    }
     if (!body.externalOnly || body.externalMode === "profile") {
       for (const website of vendorCatalogWebsites) {
         urlSet.add(website);
+        vendoraWebsiteSet.add(website);
       }
     }
     for (const website of body.websites ?? []) {
       if (website?.trim()) {
-        urlSet.add(normalizeUrl(website));
+        const normalized = normalizeUrl(website);
+        urlSet.add(normalized);
+        manualWebsiteSet.add(normalized);
       }
     }
 
-    const websites = Array.from(urlSet).slice(0, 6);
+    const websites = Array.from(urlSet).slice(0, 14);
 
     const websiteSnapshots = (
       await Promise.all(
@@ -1386,6 +1613,18 @@ export async function POST(req: Request) {
         })
       )
     ).filter((item): item is NonNullable<typeof item> => Boolean(item));
+    const websiteAttribution: WebsiteSourceAttribution[] = websiteSnapshots.map((snapshot) => {
+      const origins: string[] = [];
+      if (customerWebsiteSet.has(snapshot.url)) origins.push("customer_website");
+      if (vendoraWebsiteSet.has(snapshot.url)) origins.push("vendora_catalog");
+      if (manualWebsiteSet.has(snapshot.url)) origins.push("manual_input");
+      if (origins.length === 0) origins.push("inferred");
+      return {
+        url: snapshot.url,
+        title: snapshot.title,
+        origins
+      };
+    });
     const customerWebsiteSnapshots = websiteSnapshots.filter((snapshot) => !isVendoraWebsite(snapshot.url));
     const vendoraWebsiteSnapshots = websiteSnapshots.filter((snapshot) => isVendoraWebsite(snapshot.url));
     const compactWebsiteSnapshots = compactWebsiteSnapshotsForPrompt(websiteSnapshots);
@@ -1401,10 +1640,11 @@ export async function POST(req: Request) {
           organizationNumber: baseCustomer?.organization ?? null,
           website: baseCustomer?.website ?? null,
           industry,
-          maxResults: 14,
+          maxResults: 28,
           blockedDomains: settings.blockedSourceDomains,
           preferredDomains: settings.preferredSourceDomains
         });
+        const customerResearchContext = baseCustomer?.id ? await loadCustomerResearchContext(baseCustomer.id) : null;
         const mergedExtraInstructions = [settings.extraInstructions, body.extraInstructions]
           .map((value) => String(value ?? "").trim())
           .filter(Boolean)
@@ -1481,6 +1721,7 @@ export async function POST(req: Request) {
           research_inputs: {
             website_data: compactWebsiteSnapshots,
             customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
+            crm_customer_context: customerResearchContext,
             public_company_data: {
               signals: companySignals
             },
@@ -1518,6 +1759,7 @@ export async function POST(req: Request) {
         }
 
         const firstStructured = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+        const firstShapeValid = aiResult?.outputText ? hasRequiredDeepProfileShape(aiResult.outputText) : false;
         const truncatedByModel =
           String(aiResult?.finishReason ?? "")
             .toUpperCase()
@@ -1525,6 +1767,7 @@ export async function POST(req: Request) {
         const outputTooShort =
           truncatedByModel ||
           (aiResult?.outputText?.trim().length ?? 0) < 1200 ||
+          !firstShapeValid ||
           !firstStructured ||
           (firstStructured.categoriesToPitch?.length ?? 0) < 5 ||
           (firstStructured.nextBestActions?.length ?? 0) < 6;
@@ -1547,10 +1790,12 @@ export async function POST(req: Request) {
         }
 
         let structuredInsight = aiResult?.outputText ? parseStructuredResearchInsight(aiResult.outputText) : null;
+        const parsedShapeOk = aiResult?.outputText ? hasRequiredDeepProfileShape(aiResult.outputText) : false;
         const needsHardFallback =
           !aiError &&
           aiResult?.outputText &&
-          (!structuredInsight ||
+          (!parsedShapeOk ||
+            !structuredInsight ||
             (structuredInsight.categoriesToPitch?.length ?? 0) < 4 ||
             (structuredInsight.nextBestActions?.length ?? 0) < 5);
         if (needsHardFallback) {
@@ -1633,6 +1878,24 @@ export async function POST(req: Request) {
           structuredInsight && structuredInsight.assortmentFitScore === null && localAssortmentFitScore !== null
             ? { ...structuredInsight, assortmentFitScore: localAssortmentFitScore }
             : structuredInsight;
+        const profileSourceAttribution: ResearchSourceAttribution = {
+          web: websiteAttribution,
+          externalSignals: companySignals.map((signal) => ({
+            sourceType: signal.sourceType,
+            url: signal.url,
+            title: signal.title
+          })),
+          crm: customerResearchContext
+            ? {
+                contactsCount: customerResearchContext.contacts.length,
+                plansCount: customerResearchContext.plans.length,
+                activitiesCount: customerResearchContext.activities.length,
+                salesRecordsCount: customerResearchContext.salesRecords.length,
+                hasPriorResearch: Boolean(customerResearchContext.priorResearch),
+                customerUpdatedAt: customerResearchContext.customer?.updatedAt ?? null
+              }
+            : null
+        };
         let savedInsight = null;
         if (baseCustomer?.id && structuredWithFallback) {
           savedInsight = await saveResearchInsightToCustomer(
@@ -1640,7 +1903,8 @@ export async function POST(req: Request) {
             structuredWithFallback,
             aiResult?.model ?? null,
             actorEmail,
-            aiResult?.outputText ?? null
+            aiResult?.outputText ?? null,
+            profileSourceAttribution
           );
         }
 
@@ -1664,6 +1928,7 @@ export async function POST(req: Request) {
           localAssortmentFitScore,
           savedInsight,
           usedExtraInstructions: mergedExtraInstructions || null,
+          sourceAttribution: profileSourceAttribution,
           aiPrompt: finalPrompt,
           aiResult,
           aiError
@@ -2024,6 +2289,18 @@ export async function POST(req: Request) {
         },
         websiteSnapshots,
         similarCustomers,
+        sourceAttribution: {
+          web: websiteAttribution,
+          externalSignals: externalDiscovery.candidates.map((candidate) => ({
+            sourceType: candidate.sourceType || "external",
+            url: candidate.website || candidate.sourceUrl || "",
+            title: candidate.name
+          })),
+          discovery: {
+            providers: externalDiscovery.usedProviders,
+            seedCount: externalDiscovery.candidates.length
+          }
+        },
         aiPrompt: finalPrompt,
         aiResult,
         aiError,

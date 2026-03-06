@@ -45,7 +45,23 @@ type ResearchResponse = {
   aiPrompt: string;
   usedExtraInstructions?: string | null;
   companySignals?: Array<{ title: string; url: string; snippet: string; sourceType: string }> | null;
-  aiResult?: { provider: "gemini"; model: string; outputText: string } | null;
+  sourceAttribution?: {
+    web?: Array<{ url: string; title?: string | null; origins?: string[] }>;
+    externalSignals?: Array<{ sourceType?: string; url?: string; title?: string }>;
+    crm?: {
+      contactsCount?: number;
+      plansCount?: number;
+      activitiesCount?: number;
+      salesRecordsCount?: number;
+      hasPriorResearch?: boolean;
+      customerUpdatedAt?: string | null;
+    } | null;
+    discovery?: {
+      providers?: string[];
+      seedCount?: number;
+    };
+  } | null;
+  aiResult?: { provider: "gemini" | "claude"; model: string; outputText: string } | null;
   aiError?: string | null;
 };
 
@@ -57,14 +73,17 @@ type MarkdownSection = {
 type JsonMap = Record<string, unknown>;
 
 type NormalizedProfileResearch = {
+  phase1ResearchSummary: JsonMap;
   accountSummary: JsonMap;
   scorecard: JsonMap;
   growth: JsonMap;
   categories: JsonMap[];
   contactPaths: JsonMap;
   recommendedPitch: JsonMap;
+  outreachPlaybook: JsonMap;
   outreachAssets: JsonMap;
   risks: JsonMap;
+  dataQualityNotes: JsonMap;
   nextBestActions: string[];
   evidenceLog: JsonMap[];
 };
@@ -114,6 +133,7 @@ function parseJsonLoose(text: string): unknown {
 
 function normalizeProfileResearchJson(root: JsonMap | null): NormalizedProfileResearch | null {
   if (!root) return null;
+  const phase1ResearchSummary = asJsonMap(root.phase1_research_summary) ?? {};
   const accountSummary = asJsonMap(root.account_summary) ?? asJsonMap(root.target_account_summary) ?? {};
   const scorecard = asJsonMap(root.vendora_fit_scorecard) ?? asJsonMap(root.vendora_match_scorecard) ?? {};
   const growth = asJsonMap(root.growth_opportunities_for_vendora) ?? {};
@@ -125,35 +145,43 @@ function normalizeProfileResearchJson(root: JsonMap | null): NormalizedProfileRe
     .filter((row): row is JsonMap => Boolean(row));
   const contactPaths = asJsonMap(root.contact_paths) ?? {};
   const recommendedPitch = asJsonMap(root.recommended_pitch) ?? {};
+  const outreachPlaybook = asJsonMap(root.outreach_playbook) ?? {};
   const outreachAssets = asJsonMap(root.outreach_assets) ?? {};
   const risks = asJsonMap(root.risks_and_barriers) ?? asJsonMap(root.risks_and_open_questions) ?? {};
+  const dataQualityNotes = asJsonMap(root.data_quality_notes) ?? {};
   const nextBestActions = asTextArray(root.next_best_actions);
   const evidenceLog = asJsonArray(root.evidence_log)
     .map((row) => asJsonMap(row))
     .filter((row): row is JsonMap => Boolean(row));
 
   const hasData =
+    Object.keys(phase1ResearchSummary).length > 0 ||
     Object.keys(accountSummary).length > 0 ||
     Object.keys(scorecard).length > 0 ||
     Object.keys(growth).length > 0 ||
     categories.length > 0 ||
     Object.keys(contactPaths).length > 0 ||
     Object.keys(recommendedPitch).length > 0 ||
+    Object.keys(outreachPlaybook).length > 0 ||
     Object.keys(outreachAssets).length > 0 ||
     Object.keys(risks).length > 0 ||
+    Object.keys(dataQualityNotes).length > 0 ||
     nextBestActions.length > 0 ||
     evidenceLog.length > 0;
   if (!hasData) return null;
 
   return {
+    phase1ResearchSummary,
     accountSummary,
     scorecard,
     growth,
     categories,
     contactPaths,
     recommendedPitch,
+    outreachPlaybook,
     outreachAssets,
     risks,
+    dataQualityNotes,
     nextBestActions,
     evidenceLog
   };
@@ -211,14 +239,17 @@ function normalizeProfileResearchFromStructuredInsight(value: ResearchResponse["
   const nextBestActions = Array.isArray(value.nextBestActions) ? value.nextBestActions : [];
 
   return {
+    phase1ResearchSummary: {},
     accountSummary,
     scorecard,
     growth: {},
     categories,
     contactPaths,
     recommendedPitch: {},
+    outreachPlaybook: {},
     outreachAssets: {},
     risks: {},
+    dataQualityNotes: {},
     nextBestActions,
     evidenceLog: []
   };
@@ -1243,6 +1274,108 @@ function ResearchAdminContent() {
                   {result.aiError ? <p className="crm-subtle" style={{ color: "#b42318", marginTop: "0.5rem" }}>{result.aiError}</p> : null}
                   {effectiveProfileResearch ? (
                     <div className="crm-list" style={{ marginTop: "0.6rem" }}>
+                      {Object.keys(effectiveProfileResearch.phase1ResearchSummary).length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Research verification summary" : "Research verification summary"}</h4>
+                          <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+                            {asText(effectiveProfileResearch.phase1ResearchSummary.research_confidence_note) || "-"}
+                          </p>
+                          {asTextArray(effectiveProfileResearch.phase1ResearchSummary.verified_fields).length > 0 ? (
+                            <>
+                              <h5 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Verified fields" : "Verified fields"}</h5>
+                              <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                {asTextArray(effectiveProfileResearch.phase1ResearchSummary.verified_fields).slice(0, 20).map((row, index) => (
+                                  <li key={`${row}-${index}`}>{row}</li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
+                          {asTextArray(effectiveProfileResearch.phase1ResearchSummary.estimated_fields).length > 0 ? (
+                            <>
+                              <h5 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Estimated fields" : "Estimated fields"}</h5>
+                              <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                {asTextArray(effectiveProfileResearch.phase1ResearchSummary.estimated_fields).slice(0, 20).map((row, index) => (
+                                  <li key={`${row}-${index}`}>{row}</li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
+                          {asTextArray(effectiveProfileResearch.phase1ResearchSummary.needs_validation_fields).length > 0 ? (
+                            <>
+                              <h5 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Needs validation" : "Needs validation"}</h5>
+                              <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                {asTextArray(effectiveProfileResearch.phase1ResearchSummary.needs_validation_fields).slice(0, 20).map((row, index) => (
+                                  <li key={`${row}-${index}`}>{row}</li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
+                          {asTextArray(effectiveProfileResearch.phase1ResearchSummary.sources_checked).length > 0 ? (
+                            <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+                              <strong>{lang === "sv" ? "Sources checked" : "Sources checked"}:</strong>{" "}
+                              {asTextArray(effectiveProfileResearch.phase1ResearchSummary.sources_checked).join(" | ")}
+                            </p>
+                          ) : null}
+                        </article>
+                      ) : null}
+
+                      {Object.keys(effectiveProfileResearch.accountSummary).length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Company facts" : "Company facts"}</h4>
+                          <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+                            <strong>{lang === "sv" ? "Legal name" : "Legal name"}:</strong> {asText(effectiveProfileResearch.accountSummary.legal_name) || "-"}
+                          </p>
+                          <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                            <strong>{lang === "sv" ? "Website" : "Website"}:</strong>{" "}
+                            {asText(effectiveProfileResearch.accountSummary.website) ? (
+                              <a
+                                className="crm-link-inline"
+                                href={asText(effectiveProfileResearch.accountSummary.website)}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {asText(effectiveProfileResearch.accountSummary.website)}
+                              </a>
+                            ) : "-"}
+                          </p>
+                          <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                            <strong>{lang === "sv" ? "Headquarters" : "Headquarters"}:</strong> {asText(effectiveProfileResearch.accountSummary.headquarters) || "-"}
+                          </p>
+                          {asTextArray(effectiveProfileResearch.accountSummary.countries_of_operation).length > 0 ? (
+                            <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                              <strong>{lang === "sv" ? "Countries of operation" : "Countries of operation"}:</strong>{" "}
+                              {asTextArray(effectiveProfileResearch.accountSummary.countries_of_operation).join(", ")}
+                            </p>
+                          ) : null}
+                          {(["revenue", "employees", "ownership", "founded"] as const).map((metricKey) => {
+                            const metric = asJsonMap(effectiveProfileResearch.accountSummary[metricKey]);
+                            if (!metric) return null;
+                            const value = asText(metric.value);
+                            const year = asText(metric.year);
+                            const status = asText(metric.status);
+                            const source = asText(metric.source);
+                            if (!value && !year && !status && !source) return null;
+                            return (
+                              <p className="crm-subtle" style={{ marginTop: "0.35rem" }} key={metricKey}>
+                                <strong>{metricKey}:</strong> {value || "-"}
+                                {year ? ` (${year})` : ""}
+                                {status ? ` · ${status}` : ""}
+                                {source ? ` · ${source}` : ""}
+                              </p>
+                            );
+                          })}
+                          <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                            <strong>{lang === "sv" ? "Logistics model" : "Logistics model"}:</strong> {asText(effectiveProfileResearch.accountSummary.logistics_model) || "-"}
+                          </p>
+                          {asTextArray(effectiveProfileResearch.accountSummary.brand_mix_signals).length > 0 ? (
+                            <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                              <strong>{lang === "sv" ? "Brand mix signals" : "Brand mix signals"}:</strong>{" "}
+                              {asTextArray(effectiveProfileResearch.accountSummary.brand_mix_signals).join(" | ")}
+                            </p>
+                          ) : null}
+                        </article>
+                      ) : null}
+
                       <article className="crm-item">
                         <h4 style={{ margin: 0 }}>{lang === "sv" ? "Account summary" : "Account summary"}</h4>
                         <p style={{ marginTop: "0.45rem" }}>
@@ -1297,6 +1430,18 @@ function ResearchAdminContent() {
                             <h5 style={{ marginTop: "0.6rem", marginBottom: 0 }}>{lang === "sv" ? "Assumptions" : "Assumptions"}</h5>
                             <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
                               {asTextArray(effectiveProfileResearch.scorecard.assumptions).slice(0, 12).map((row, index) => (
+                                <li key={`${row}-${index}`}>{row}</li>
+                              ))}
+                            </ul>
+                          </>
+                        ) : null}
+                        {asTextArray(effectiveProfileResearch.scorecard.score_adjustments_from_data_gaps).length > 0 ? (
+                          <>
+                            <h5 style={{ marginTop: "0.6rem", marginBottom: 0 }}>
+                              {lang === "sv" ? "Score adjustments from data gaps" : "Score adjustments from data gaps"}
+                            </h5>
+                            <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                              {asTextArray(effectiveProfileResearch.scorecard.score_adjustments_from_data_gaps).slice(0, 12).map((row, index) => (
                                 <li key={`${row}-${index}`}>{row}</li>
                               ))}
                             </ul>
@@ -1416,6 +1561,49 @@ function ResearchAdminContent() {
                         </article>
                       ) : null}
 
+                      {Object.keys(effectiveProfileResearch.outreachPlaybook).length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Outreach playbook" : "Outreach playbook"}</h4>
+                          {[
+                            ["recommended_first_action", lang === "sv" ? "Första rekommenderade steg" : "Recommended first action"],
+                            ["pitch_angle", lang === "sv" ? "Pitch-vinkel" : "Pitch angle"],
+                            ["hook_message", lang === "sv" ? "Hook message" : "Hook message"],
+                            ["timing_recommendation", lang === "sv" ? "Timing" : "Timing recommendation"],
+                            ["onboarding_next_step", lang === "sv" ? "Nästa onboarding-steg" : "Onboarding next step"]
+                          ].map(([key, label]) =>
+                            asText(effectiveProfileResearch.outreachPlaybook[key]) ? (
+                              <p className="crm-subtle" style={{ marginTop: "0.45rem" }} key={key}>
+                                <strong>{label}:</strong> {asText(effectiveProfileResearch.outreachPlaybook[key])}
+                              </p>
+                            ) : null
+                          )}
+                          {asTextArray(effectiveProfileResearch.outreachPlaybook.supporting_materials_to_prepare).length > 0 ? (
+                            <>
+                              <h5 style={{ marginTop: "0.6rem", marginBottom: 0 }}>
+                                {lang === "sv" ? "Supporting materials to prepare" : "Supporting materials to prepare"}
+                              </h5>
+                              <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                {asTextArray(effectiveProfileResearch.outreachPlaybook.supporting_materials_to_prepare).slice(0, 12).map((row, index) => (
+                                  <li key={`${row}-${index}`}>{row}</li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
+                          {asTextArray(effectiveProfileResearch.outreachPlaybook.risk_flags).length > 0 ? (
+                            <>
+                              <h5 style={{ marginTop: "0.6rem", marginBottom: 0 }}>
+                                {lang === "sv" ? "Risk flags" : "Risk flags"}
+                              </h5>
+                              <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                {asTextArray(effectiveProfileResearch.outreachPlaybook.risk_flags).slice(0, 12).map((row, index) => (
+                                  <li key={`${row}-${index}`}>{row}</li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
+                        </article>
+                      ) : null}
+
                       {Object.keys(effectiveProfileResearch.outreachAssets).length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Outreach assets" : "Outreach assets"}</h4>
@@ -1485,6 +1673,28 @@ function ResearchAdminContent() {
                         </article>
                       ) : null}
 
+                      {Object.keys(effectiveProfileResearch.dataQualityNotes).length > 0 ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Data quality notes" : "Data quality notes"}</h4>
+                          {[
+                            ["primary_data_gaps", lang === "sv" ? "Primära datagap" : "Primary data gaps"],
+                            ["recommended_validation_steps", lang === "sv" ? "Rekommenderade valideringssteg" : "Recommended validation steps"],
+                            ["sources_checked", lang === "sv" ? "Källor kontrollerade" : "Sources checked"]
+                          ].map(([key, label]) =>
+                            asTextArray(effectiveProfileResearch.dataQualityNotes[key]).length > 0 ? (
+                              <div key={key} style={{ marginTop: "0.55rem" }}>
+                                <h5 style={{ margin: 0 }}>{label}</h5>
+                                <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                  {asTextArray(effectiveProfileResearch.dataQualityNotes[key]).slice(0, 15).map((row, index) => (
+                                    <li key={`${row}-${index}`}>{row}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null
+                          )}
+                        </article>
+                      ) : null}
+
                       {effectiveProfileResearch.nextBestActions.length > 0 ? (
                         <article className="crm-item">
                           <h4 style={{ margin: 0 }}>{lang === "sv" ? "Next best actions" : "Next best actions"}</h4>
@@ -1521,6 +1731,57 @@ function ResearchAdminContent() {
                               );
                             })}
                           </ul>
+                        </article>
+                      ) : null}
+
+                      {result.sourceAttribution ? (
+                        <article className="crm-item">
+                          <h4 style={{ margin: 0 }}>{lang === "sv" ? "Källhänvisning" : "Source attribution"}</h4>
+                          {Array.isArray(result.sourceAttribution.web) && result.sourceAttribution.web.length > 0 ? (
+                            <>
+                              <h5 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Webbkällor" : "Web sources"}</h5>
+                              <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                {result.sourceAttribution.web.slice(0, 20).map((source, index) => (
+                                  <li key={`${source.url}-${index}`}>
+                                    <a href={source.url} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                      {source.title || source.url}
+                                    </a>
+                                    {Array.isArray(source.origins) && source.origins.length > 0 ? ` | ${source.origins.join(", ")}` : ""}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
+                          {Array.isArray(result.sourceAttribution.externalSignals) && result.sourceAttribution.externalSignals.length > 0 ? (
+                            <>
+                              <h5 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Externa signaler/API" : "External signals/APIs"}</h5>
+                              <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                                {result.sourceAttribution.externalSignals.slice(0, 25).map((signal, index) => (
+                                  <li key={`${signal.url || signal.title || "signal"}-${index}`}>
+                                    {signal.url ? (
+                                      <a href={signal.url} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                        {signal.title || signal.url}
+                                      </a>
+                                    ) : (
+                                      <span>{signal.title || "-"}</span>
+                                    )}
+                                    {signal.sourceType ? ` | ${signal.sourceType}` : ""}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
+                          {result.sourceAttribution.crm ? (
+                            <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
+                              <strong>CRM:</strong>{" "}
+                              contacts {String(result.sourceAttribution.crm.contactsCount ?? 0)}, plans {String(result.sourceAttribution.crm.plansCount ?? 0)}, activities {String(result.sourceAttribution.crm.activitiesCount ?? 0)}, sales {String(result.sourceAttribution.crm.salesRecordsCount ?? 0)}
+                              {" · "}
+                              prior research: {result.sourceAttribution.crm.hasPriorResearch ? "yes" : "no"}
+                              {result.sourceAttribution.crm.customerUpdatedAt
+                                ? ` · updated: ${new Date(result.sourceAttribution.crm.customerUpdatedAt).toLocaleString()}`
+                                : ""}
+                            </p>
+                          ) : null}
                         </article>
                       ) : null}
 
@@ -1776,6 +2037,40 @@ function ResearchAdminContent() {
                       )}
                     </div>
                   </section>
+
+                  {result.sourceAttribution ? (
+                    <section className="crm-card">
+                      <h3>{lang === "sv" ? "Källhänvisning" : "Source attribution"}</h3>
+                      {Array.isArray(result.sourceAttribution.externalSignals) && result.sourceAttribution.externalSignals.length > 0 ? (
+                        <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                          {result.sourceAttribution.externalSignals.slice(0, 30).map((signal, index) => (
+                            <article className="crm-item" key={`${signal.url || signal.title || "sig"}-${index}`}>
+                              <div className="crm-item-head">
+                                {signal.url ? (
+                                  <a href={signal.url} target="_blank" rel="noreferrer" className="crm-link-inline">
+                                    {signal.title || signal.url}
+                                  </a>
+                                ) : (
+                                  <strong>{signal.title || "-"}</strong>
+                                )}
+                                <span className="crm-badge">{signal.sourceType || "external"}</span>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="crm-subtle" style={{ marginTop: "0.5rem" }}>
+                          {lang === "sv" ? "Ingen extern källa loggad ännu." : "No external source logged yet."}
+                        </p>
+                      )}
+                      {result.sourceAttribution.discovery ? (
+                        <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>
+                          Providers: {(result.sourceAttribution.discovery.providers || []).join(", ") || "-"} · Seed candidates:{" "}
+                          {String(result.sourceAttribution.discovery.seedCount ?? 0)}
+                        </p>
+                      ) : null}
+                    </section>
+                  ) : null}
 
                   <section className="crm-card">
                     <h3>{lang === "sv" ? "AI-rekommendationer" : "AI recommendations"}</h3>
