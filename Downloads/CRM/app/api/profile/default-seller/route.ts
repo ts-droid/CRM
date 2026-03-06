@@ -31,9 +31,10 @@ export async function GET(req: Request) {
   const match = config.sellerAssignments.find((assignment) =>
     assignment.emails.some((candidate) => candidate.trim().toLowerCase() === email)
   );
+  const normalizedSeller = String(match?.seller ?? "").trim();
 
   return NextResponse.json({
-    defaultSeller: match?.seller ?? null,
+    defaultSeller: normalizedSeller || null,
     email
   });
 }

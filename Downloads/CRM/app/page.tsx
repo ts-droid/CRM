@@ -64,7 +64,9 @@ export default function HomePage() {
     params.set("pageSize", String(pageSize));
     if (query) params.set("q", query);
     if (country) params.set("country", country);
-    if (seller) params.set("seller", seller);
+    if (seller && (facetSellers.length === 0 || facetSellers.includes(seller))) {
+      params.set("seller", seller);
+    }
 
     const res = await fetch(`/api/customers?${params.toString()}`, { cache: "no-store" });
     if (!res.ok) return;
@@ -106,8 +108,9 @@ export default function HomePage() {
           return;
         }
         const data = (await res.json()) as { defaultSeller?: string | null };
-        if (data.defaultSeller && !seller) {
-          setSeller(data.defaultSeller);
+        const normalizedDefaultSeller = String(data.defaultSeller ?? "").trim();
+        if (normalizedDefaultSeller && !seller) {
+          setSeller(normalizedDefaultSeller);
         }
       } finally {
         setDefaultSellerApplied(true);
@@ -134,6 +137,18 @@ export default function HomePage() {
   useEffect(() => {
     loadFacets();
   }, [query]);
+
+  useEffect(() => {
+    if (country && facetCountries.length > 0 && !facetCountries.includes(country)) {
+      setCountry("");
+    }
+  }, [country, facetCountries]);
+
+  useEffect(() => {
+    if (seller && facetSellers.length > 0 && !facetSellers.includes(seller)) {
+      setSeller("");
+    }
+  }, [seller, facetSellers]);
 
   const countries = useMemo(() => facetCountries, [facetCountries]);
 
