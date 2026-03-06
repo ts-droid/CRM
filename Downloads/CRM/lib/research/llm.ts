@@ -16,7 +16,19 @@ async function generateWithClaude(prompt: string, options: GeminiOptions = {}): 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
-  const preferredModel = process.env.CLAUDE_MODEL?.trim() || "claude-3-5-sonnet-latest";
+  const preferredModel = process.env.CLAUDE_MODEL?.trim() || "claude-sonnet-4-20250514";
+  const modelCandidates = Array.from(
+    new Set(
+      [
+        preferredModel,
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-sonnet-20241022"
+      ].filter(Boolean)
+    )
+  );
   const envMaxTokens = Number(process.env.CLAUDE_MAX_OUTPUT_TOKENS);
   const defaultMaxTokens = Number.isFinite(envMaxTokens) && envMaxTokens > 0 ? Math.round(envMaxTokens) : 8192;
   const maxOutputTokensRaw =
@@ -24,49 +36,56 @@ async function generateWithClaude(prompt: string, options: GeminiOptions = {}): 
       ? Math.round(options.maxOutputTokens as number)
       : defaultMaxTokens;
   const maxTokens = Math.max(256, Math.min(8192, maxOutputTokensRaw));
+  let lastError = "";
 
   const system = options.jsonMode
     ? "Return only valid JSON. No markdown fences or prose outside JSON."
     : "You are a pragmatic analyst. Keep output concise and evidence-based.";
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: preferredModel,
-      max_tokens: maxTokens,
-      temperature: 0.2,
-      system,
-      messages: [{ role: "user", content: prompt }]
-    }),
-    cache: "no-store"
-  });
+  for (const model of modelCandidates) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        temperature: 0.2,
+        system,
+        messages: [{ role: "user", content: prompt }]
+      }),
+      cache: "no-store"
+    });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Claude request failed (${response.status}) on ${preferredModel}: ${body.slice(0, 300)}`);
+    if (!response.ok) {
+      const body = await response.text();
+      lastError = `Claude request failed (${response.status}) on ${model}: ${body.slice(0, 300)}`;
+      if (response.status === 404) continue;
+      throw new Error(lastError);
+    }
+
+    const data = (await response.json()) as {
+      content?: ClaudeContentBlock[];
+      stop_reason?: string;
+    };
+    const outputText = (data.content ?? [])
+      .filter((part) => part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text ?? "")
+      .join("\n")
+      .trim();
+
+    return {
+      provider: "claude",
+      model,
+      outputText,
+      finishReason: data.stop_reason
+    };
   }
 
-  const data = (await response.json()) as {
-    content?: ClaudeContentBlock[];
-    stop_reason?: string;
-  };
-  const outputText = (data.content ?? [])
-    .filter((part) => part.type === "text" && typeof part.text === "string")
-    .map((part) => part.text ?? "")
-    .join("\n")
-    .trim();
-
-  return {
-    provider: "claude",
-    model: preferredModel,
-    outputText,
-    finishReason: data.stop_reason
-  };
+  throw new Error(lastError || "Claude request failed: no available model");
 }
 
 async function generateWithGeminiCore(prompt: string, options: GeminiOptions = {}): Promise<LlmResult | null> {
