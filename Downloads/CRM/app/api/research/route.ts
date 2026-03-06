@@ -576,7 +576,18 @@ async function saveResearchInsightToCustomer(
     rawOutput: rawOutput || null,
     sourceAttribution: sourceAttribution || null
   };
-  const nextHistory = [historyEntry, ...priorHistory].slice(0, 40);
+  const historyWithLatest = [historyEntry, ...priorHistory];
+  const latestEntry = historyWithLatest[0];
+  const latestYear = new Date(asString(latestEntry?.ranAt) || runAt).getUTCFullYear();
+  const seenYears = new Set<number>([latestYear]);
+  const compactOlderHistory: Record<string, unknown>[] = [];
+  for (const row of historyWithLatest.slice(1)) {
+    const rowYear = new Date(asString(row?.ranAt) || runAt).getUTCFullYear();
+    if (seenYears.has(rowYear)) continue;
+    seenYears.add(rowYear);
+    compactOlderHistory.push(row);
+  }
+  const nextHistory = [latestEntry, ...compactOlderHistory].filter(Boolean).slice(0, 12);
   const nextSignals = {
     ...currentSignals,
     research: {

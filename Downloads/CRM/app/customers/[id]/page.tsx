@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/components/i18n";
 
 type Customer = {
@@ -585,6 +585,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [allRegions, setAllRegions] = useState<string[]>([]);
   const [selectedCountry, setSelectedCountry] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [selectedResearchArchiveYear, setSelectedResearchArchiveYear] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   async function loadCustomer() {
@@ -894,6 +895,41 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     })
     .filter((row): row is ResearchHistoryRow => Boolean(row))
     .sort((a, b) => new Date(b.ranAt).getTime() - new Date(a.ranAt).getTime());
+  const latestResearchEntry = researchHistory[0] ?? null;
+  const archivedResearchByYear = useMemo(() => {
+    const rows = researchHistory.slice(1);
+    const byYear = new Map<string, ResearchHistoryRow>();
+    for (const entry of rows) {
+      const yearValue = new Date(entry.ranAt).getFullYear();
+      const yearKey = Number.isFinite(yearValue) ? String(yearValue) : "Unknown";
+      if (!byYear.has(yearKey)) byYear.set(yearKey, entry);
+    }
+    return Array.from(byYear.entries())
+      .map(([year, entry]) => ({ year, entry }))
+      .sort((a, b) => Number(b.year) - Number(a.year));
+  }, [researchHistory]);
+  useEffect(() => {
+    if (archivedResearchByYear.length === 0) {
+      if (selectedResearchArchiveYear) setSelectedResearchArchiveYear("");
+      return;
+    }
+    if (!archivedResearchByYear.some((item) => item.year === selectedResearchArchiveYear)) {
+      setSelectedResearchArchiveYear(archivedResearchByYear[0].year);
+    }
+  }, [archivedResearchByYear, selectedResearchArchiveYear]);
+  const selectedArchivedResearch = useMemo(
+    () => archivedResearchByYear.find((item) => item.year === selectedResearchArchiveYear)?.entry ?? null,
+    [archivedResearchByYear, selectedResearchArchiveYear]
+  );
+  const visibleResearchEntries = useMemo(() => {
+    const rows: ResearchHistoryRow[] = [];
+    if (latestResearchEntry) rows.push(latestResearchEntry);
+    if (selectedArchivedResearch && (!latestResearchEntry || selectedArchivedResearch.id !== latestResearchEntry.id)) {
+      rows.push(selectedArchivedResearch);
+    }
+    return rows;
+  }, [latestResearchEntry, selectedArchivedResearch]);
+  const latestResearchId = latestResearchEntry?.id ?? null;
   const similarAiSections = parseMarkdownSections(similarAiOutput);
   const lookalikeRows = parseLookalikeTable(similarAiOutput);
   const aiDrillNames = extractDrillCandidatesFromText(similarAiOutput, 24);
@@ -1795,18 +1831,42 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         </div>
         <p className="crm-subtle" style={{ marginTop: "0.4rem" }}>
           {lang === "sv"
-            ? "Visar sparade researchkörningar för kunden (senaste överst)."
-            : "Shows saved research runs for this customer (latest first)."}
+            ? "Visar senaste research fullt ut. Äldre research visas som årsflikar (en per år)."
+            : "Shows the latest research in full. Older research is available as yearly tabs (one per year)."}
         </p>
+        {archivedResearchByYear.length > 0 ? (
+          <div className="crm-row" style={{ marginTop: "0.55rem", gap: "0.45rem" }}>
+            <span className="crm-subtle" style={{ alignSelf: "center" }}>
+              {lang === "sv" ? "Arkiv:" : "Archive:"}
+            </span>
+            {archivedResearchByYear.map((item) => (
+              <button
+                key={`research-archive-${item.year}`}
+                type="button"
+                className={`crm-tab ${selectedResearchArchiveYear === item.year ? "active" : ""}`}
+                onClick={() => setSelectedResearchArchiveYear(item.year)}
+              >
+                {item.year}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="crm-list" style={{ marginTop: "0.7rem" }}>
           {researchHistory.length === 0 ? (
             <p className="crm-empty">{lang === "sv" ? "Ingen research sparad ännu." : "No saved research yet."}</p>
           ) : (
-            researchHistory.map((entry) => (
+            visibleResearchEntries.map((entry) => (
               <article key={entry.id} className="crm-item">
                 <div className="crm-item-head">
                   <strong>{new Date(entry.ranAt).toLocaleString()}</strong>
-                  <span className="crm-badge">{entry.model || "gemini"}</span>
+                  <div className="crm-row" style={{ gap: "0.4rem" }}>
+                    <span className="crm-badge">
+                      {entry.id === latestResearchId
+                        ? (lang === "sv" ? "Senaste" : "Latest")
+                        : String(new Date(entry.ranAt).getFullYear())}
+                    </span>
+                    <span className="crm-badge">{entry.model || "gemini"}</span>
+                  </div>
                 </div>
                 <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
                   {(lang === "sv" ? "Körd av" : "Run by")}: {entry.ranBy || "-"}
