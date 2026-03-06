@@ -6,7 +6,6 @@ import { useI18n } from "@/components/i18n";
 
 const BASE_LINKS = [
   { href: "/", key: "navOverview" },
-  { href: "/customers", key: "navCustomers" },
   { href: "/contacts", key: "navContacts" },
   { href: "/plans", key: "navPlans" },
 ] as const;

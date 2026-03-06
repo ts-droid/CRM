@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/components/i18n";
 
 type Customer = {
@@ -30,6 +30,41 @@ type Stats = {
   reason?: string | null;
 };
 
+type FormConfig = {
+  industries: string[];
+  countries: string[];
+  sellers: string[];
+  requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
+};
+
+const DEFAULT_CONFIG: FormConfig = {
+  industries: [
+    "Consumer Electronics",
+    "Computer & IT Retail",
+    "Mobile & Telecom Retail",
+    "Office Supplies & Workplace",
+    "B2B IT Reseller",
+    "B2B E-commerce",
+    "Managed Service Provider (MSP)",
+    "System Integrator",
+    "AV & Meeting Room Solutions",
+    "Smart Home Retail",
+    "Home Electronics & Appliances",
+    "Photo & Video Retail",
+    "Gaming & Esports Retail",
+    "Education & School Supplier",
+    "Public Sector Procurement",
+    "Industrial & Field Service Supply",
+    "Hospitality & POS Solutions",
+    "Security & Surveillance Integrator",
+    "Lifestyle & Design Retail",
+    "Marketplace / Pure E-tail"
+  ],
+  countries: ["SE", "NO", "DK", "FI", "EE", "LV", "LT"],
+  sellers: ["Team Nordics"],
+  requiredCustomerFields: ["name", "industry", "country", "seller"]
+};
+
 export default function HomePage() {
   const [stats, setStats] = useState<Stats>({ customers: 0, contacts: 0, plans: 0, available: false, reason: null });
   const [rows, setRows] = useState<Customer[]>([]);
@@ -45,7 +80,20 @@ export default function HomePage() {
   const [totalPages, setTotalPages] = useState(1);
   const [facetCountries, setFacetCountries] = useState<string[]>([]);
   const [facetSellers, setFacetSellers] = useState<string[]>([]);
+  const [config, setConfig] = useState<FormConfig>(DEFAULT_CONFIG);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [potentialScore, setPotentialScore] = useState(50);
   const { t, lang } = useI18n();
+
+  const required = useMemo(() => {
+    const requiredSet = new Set(config.requiredCustomerFields);
+    return {
+      industry: requiredSet.has("industry"),
+      country: requiredSet.has("country"),
+      seller: requiredSet.has("seller")
+    };
+  }, [config.requiredCustomerFields]);
 
   async function loadStats() {
     try {
@@ -54,6 +102,17 @@ export default function HomePage() {
       setStats((await res.json()) as Stats);
     } catch {
       // ignore: dashboard still renders with fallback values
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const res = await fetch("/api/admin/settings", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { config?: FormConfig };
+      if (data.config) setConfig(data.config);
+    } catch {
+      // ignore and continue with defaults
     }
   }
 
@@ -96,6 +155,7 @@ export default function HomePage() {
 
   useEffect(() => {
     loadStats();
+    loadSettings();
   }, []);
 
   useEffect(() => {
@@ -150,6 +210,45 @@ export default function HomePage() {
     }
   }, [seller, facetSellers]);
 
+  async function onSubmitNewCustomer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setCreateError(null);
+    const form = new FormData(event.currentTarget);
+
+    try {
+      const res = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.get("name"),
+          organization: form.get("organization"),
+          industry: form.get("industry"),
+          country: form.get("country"),
+          region: form.get("region"),
+          seller: form.get("seller"),
+          website: form.get("website"),
+          email: form.get("email"),
+          phone: form.get("phone"),
+          potentialScore
+        })
+      });
+
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? (lang === "sv" ? "Kunde inte skapa kund" : "Could not create customer"));
+      }
+
+      event.currentTarget.reset();
+      setPotentialScore(50);
+      await Promise.all([loadCustomers(), loadStats(), loadFacets()]);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const countries = useMemo(() => facetCountries, [facetCountries]);
 
   const sellers = useMemo(() => facetSellers, [facetSellers]);
@@ -177,7 +276,81 @@ export default function HomePage() {
         <article className="crm-card">
           <h3>{t("plans")}</h3>
           <p className="crm-stat">{stats.plans}</p>
+          <a
+            href="#new-customer"
+            className="crm-button crm-button-secondary"
+            style={{ marginTop: "0.65rem", display: "inline-block", textDecoration: "none" }}
+          >
+            {lang === "sv" ? "Ny kund" : "New customer"}
+          </a>
         </article>
+      </section>
+
+      <section className="crm-card" id="new-customer" style={{ marginTop: "1rem" }}>
+        <h3>{lang === "sv" ? "Ny kund" : "New customer"}</h3>
+        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+          {lang === "sv"
+            ? "Skapa ett kundkort med standardiserade fält för bransch, land och säljare."
+            : "Create a customer card with standardized fields for industry, country and seller."}
+        </p>
+        <form onSubmit={onSubmitNewCustomer} style={{ marginTop: "0.85rem" }}>
+          <div className="crm-row">
+            <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
+            <input className="crm-input" name="organization" placeholder={t("organization")} />
+            <select className="crm-select" name="industry" required={required.industry} defaultValue="">
+              <option value="" disabled>{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
+              {config.industries.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+            <select className="crm-select" name="country" required={required.country} defaultValue="">
+              <option value="" disabled>{lang === "sv" ? "Välj land" : "Select country"}</option>
+              {config.countries.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+            <input className="crm-input" name="region" placeholder={lang === "sv" ? "Region (t.ex. Stockholm)" : "Region (e.g. Stockholm)"} />
+            <select className="crm-select" name="seller" required={required.seller} defaultValue="">
+              <option value="" disabled>{lang === "sv" ? "Välj säljare" : "Select seller"}</option>
+              {config.sellers.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+            <input className="crm-input" name="website" placeholder={lang === "sv" ? "Webbsida (https://...)" : "Website (https://...)"} />
+            <input className="crm-input" name="email" placeholder={t("email")} type="email" />
+            <input className="crm-input" name="phone" placeholder={t("phone")} />
+          </div>
+          <div style={{ marginTop: "0.6rem" }}>
+            <label className="crm-subtle" htmlFor="overviewPotentialRange">
+              {lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}: {potentialScore}
+            </label>
+            <input
+              id="overviewPotentialRange"
+              className="crm-input"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={potentialScore}
+              onChange={(event) => setPotentialScore(Number(event.target.value))}
+            />
+            <p className="crm-subtle" style={{ marginTop: "0.25rem" }}>
+              {lang === "sv" ? "0-30 låg, 31-60 medel, 61-80 hög, 81-100 strategisk." : "0-30 low, 31-60 medium, 61-80 high, 81-100 strategic."}
+            </p>
+          </div>
+          <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={submitting}>
+            {submitting ? t("saving") : t("saveCustomer")}
+          </button>
+          {createError ? (
+            <p className="crm-error" style={{ marginTop: "0.6rem" }}>
+              {createError}
+            </p>
+          ) : null}
+        </form>
       </section>
 
       <section className="crm-card" style={{ marginTop: "1rem" }}>
