@@ -8,6 +8,10 @@ export type LlmResult = {
 type GeminiOptions = {
   jsonMode?: boolean;
   maxOutputTokens?: number;
+  systemPrompt?: string;
+  userPrompt?: string;
+  usePromptCaching?: boolean;
+  cacheTtl?: "5m" | "1h";
 };
 
 type ClaudeContentBlock = { type?: string; text?: string };
@@ -38,9 +42,13 @@ async function generateWithClaude(prompt: string, options: GeminiOptions = {}): 
   const maxTokens = Math.max(256, Math.min(8192, maxOutputTokensRaw));
   let lastError = "";
 
-  const system = options.jsonMode
+  const defaultSystem = options.jsonMode
     ? "Return only valid JSON. No markdown fences or prose outside JSON."
     : "You are a pragmatic analyst. Keep output concise and evidence-based.";
+  const systemPrompt = String(options.systemPrompt ?? "").trim() || defaultSystem;
+  const userPrompt = String(options.userPrompt ?? "").trim() || prompt;
+  const usePromptCaching = options.usePromptCaching === true;
+  const cacheTtl = options.cacheTtl === "1h" ? "1h" : undefined;
 
   for (const model of modelCandidates) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -54,8 +62,16 @@ async function generateWithClaude(prompt: string, options: GeminiOptions = {}): 
         model,
         max_tokens: maxTokens,
         temperature: 0.2,
-        system,
-        messages: [{ role: "user", content: prompt }]
+        system: usePromptCaching
+          ? [
+              {
+                type: "text",
+                text: systemPrompt,
+                cache_control: cacheTtl ? { type: "ephemeral", ttl: cacheTtl } : { type: "ephemeral" }
+              }
+            ]
+          : systemPrompt,
+        messages: [{ role: "user", content: userPrompt }]
       }),
       cache: "no-store"
     });
