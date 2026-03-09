@@ -93,6 +93,7 @@ type ResearchSourceAttribution = {
     plansCount?: number;
     activitiesCount?: number;
     salesRecordsCount?: number;
+    manualBrandRevenueCount?: number;
     hasPriorResearch?: boolean;
     customerUpdatedAt?: string | null;
   } | null;
@@ -167,6 +168,14 @@ type CustomerResearchContext = {
     unitsSold: number | null;
     ordersCount: number | null;
     updatedAt: string;
+  }>;
+  manualBrandRevenue: Array<{
+    brand: string;
+    revenue: number;
+    currency: string;
+    year: number;
+    updatedAt: string | null;
+    updatedBy: string | null;
   }>;
   priorResearch: Record<string, unknown> | null;
 };
@@ -414,6 +423,13 @@ type StructuredResearchInsight = {
   raw: Record<string, unknown>;
 };
 
+type ResearchAutofill = {
+  organization?: string;
+  industry?: string;
+  region?: string;
+  website?: string;
+};
+
 function normalizeVerification(value: unknown): StructuredResearchInsight["verificationStatus"] {
   const normalized = asString(value).toLowerCase();
   if (normalized.startsWith("verified")) return "Verified";
@@ -521,6 +537,48 @@ function parseStructuredResearchInsight(outputText: string): StructuredResearchI
   return insight;
 }
 
+function parseRegionFromHeadquarters(value: string): string {
+  const headquarters = asString(value);
+  if (!headquarters) return "";
+  const city = headquarters.split(",")[0]?.trim() ?? "";
+  if (!city) return "";
+  if (/^(sweden|norway|denmark|finland|estonia|latvia|lithuania|se|no|dk|fi|ee|lv|lt)$/i.test(city)) {
+    return "";
+  }
+  return city.slice(0, 80);
+}
+
+function inferIndustryFromSegments(segments: string[]): string {
+  const hay = segments.join(" ").toLowerCase();
+  if (!hay) return "";
+  if (/(consumer|retail|e-?commerce|marketplace|electronic|gadget|mobile|smart home)/i.test(hay)) {
+    return "Consumer Electronics";
+  }
+  if (/(b2b|reseller|msp|integrator|enterprise|procurement)/i.test(hay)) {
+    return "B2B IT Reseller";
+  }
+  if (/(office|workplace)/i.test(hay)) {
+    return "Office Supplies & Workplace";
+  }
+  return "";
+}
+
+function extractResearchAutofill(raw: Record<string, unknown>): ResearchAutofill {
+  const accountSummary = asObject(raw.account_summary) ?? asObject(raw.target_account_summary) ?? {};
+  const segments = asStringArray(accountSummary.segment_channel_profile);
+  const website = asString(accountSummary.website);
+  const legalName = asString(accountSummary.legal_name);
+  const headquarters = asString(accountSummary.headquarters);
+  const inferredIndustry = inferIndustryFromSegments(segments);
+
+  return {
+    organization: legalName || undefined,
+    industry: inferredIndustry || undefined,
+    region: parseRegionFromHeadquarters(headquarters) || undefined,
+    website: website || undefined
+  };
+}
+
 function hasRequiredDeepProfileShape(outputText: string): boolean {
   const parsed = extractJsonValue(outputText);
   const root = asObject(parsed);
@@ -544,7 +602,16 @@ async function saveResearchInsightToCustomer(
 ) {
   const existing = await prisma.customer.findUnique({
     where: { id: customerId },
-    select: { id: true, potentialScore: true, webshopSignals: true, notes: true }
+    select: {
+      id: true,
+      potentialScore: true,
+      webshopSignals: true,
+      notes: true,
+      organization: true,
+      industry: true,
+      region: true,
+      website: true
+    }
   });
   if (!existing) return null;
 
@@ -614,6 +681,12 @@ async function saveResearchInsightToCustomer(
     researchHistory: nextHistory
   };
 
+  const autofill = extractResearchAutofill(insight.raw);
+  const applyOrganization = !asString(existing.organization) && asString(autofill.organization);
+  const applyIndustry = !asString(existing.industry) && asString(autofill.industry);
+  const applyRegion = !asString(existing.region) && asString(autofill.region);
+  const applyWebsite = !asString(existing.website) && asString(autofill.website);
+
   const nextPotential =
     insight.totalScore !== null ? clampScore(insight.totalScore, existing.potentialScore) : existing.potentialScore;
 
@@ -628,7 +701,11 @@ async function saveResearchInsightToCustomer(
     data: {
       potentialScore: nextPotential,
       notes: mergedNotes,
-      webshopSignals: nextSignals as Prisma.InputJsonValue
+      webshopSignals: nextSignals as Prisma.InputJsonValue,
+      organization: applyOrganization || undefined,
+      industry: applyIndustry || undefined,
+      region: applyRegion || undefined,
+      website: applyWebsite || undefined
     },
     select: {
       id: true,
@@ -723,6 +800,18 @@ async function loadCustomerResearchContext(customerId: string): Promise<Customer
   ]);
 
   const priorResearch = asObject(asObject(customer.webshopSignals)?.research) ?? null;
+  const manualBrandRevenue = asArray(asObject(customer.webshopSignals)?.manualBrandRevenue)
+    .map((row) => asObject(row))
+    .filter((row): row is Record<string, unknown> => Boolean(row))
+    .map((row) => ({
+      brand: asString(row.brand),
+      revenue: Number.isFinite(Number(row.revenue)) ? Number(row.revenue) : 0,
+      currency: asString(row.currency) || "SEK",
+      year: Number.isFinite(Number(row.year)) ? Math.round(Number(row.year)) : new Date().getUTCFullYear(),
+      updatedAt: asString(row.updatedAt) || null,
+      updatedBy: asString(row.updatedBy) || null
+    }))
+    .filter((row) => row.brand && Number.isFinite(row.revenue) && row.revenue >= 0);
 
   return {
     customer: {
@@ -758,6 +847,7 @@ async function loadCustomerResearchContext(customerId: string): Promise<Customer
       periodEnd: row.periodEnd.toISOString(),
       updatedAt: row.updatedAt.toISOString()
     })),
+    manualBrandRevenue,
     priorResearch
   };
 }
@@ -799,8 +889,53 @@ function domainMatchesCountry(domain: string, country: string | null): boolean {
 
 function normalizeCompanyName(value: string | null | undefined): string {
   return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+    .replace(/\b(ab|as|a\/s|aps|oy|oü|ou|ltd|inc|llc|gmbh|bv|plc|srl|spa|sro|holding|group)\b/g, " ")
     .replace(/[^a-z0-9]/g, "");
+}
+
+function normalizedCompanyTokens(value: string | null | undefined): string[] {
+  const normalized = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(ab|as|a\/s|aps|oy|ou|ltd|inc|llc|gmbh|bv|plc|srl|spa|sro|holding|group)\b/g, " ")
+    .trim();
+  if (!normalized) return [];
+  return normalized
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+}
+
+function bigrams(value: string): Set<string> {
+  const text = value.replace(/\s+/g, "");
+  const out = new Set<string>();
+  if (text.length < 2) {
+    if (text) out.add(text);
+    return out;
+  }
+  for (let i = 0; i < text.length - 1; i += 1) out.add(text.slice(i, i + 2));
+  return out;
+}
+
+function jaccardScore(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const item of a) if (b.has(item)) intersection += 1;
+  const union = a.size + b.size - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+function fuzzyCompanyNameScore(a: string, b: string): number {
+  const tokenA = new Set(normalizedCompanyTokens(a));
+  const tokenB = new Set(normalizedCompanyTokens(b));
+  const tokenScore = jaccardScore(tokenA, tokenB);
+  const gramScore = jaccardScore(bigrams(normalizeCompanyName(a)), bigrams(normalizeCompanyName(b)));
+  return tokenScore * 0.65 + gramScore * 0.35;
 }
 
 function websiteDomain(value: string | null | undefined): string {
@@ -1218,6 +1353,32 @@ function buildTaskPrompt(taskPrompt: string, inputPayload: Record<string, unknow
   const inputJson = JSON.stringify(inputPayload, null, 2);
   if (!task) return `INPUT JSON\n${inputJson}`;
   return `${task}\n\nINPUT JSON\n${inputJson}`;
+}
+
+function buildClaudeUserPrompt(
+  templatePrompt: string | null | undefined,
+  taskPrompt: string,
+  inputPayload: Record<string, unknown>
+): string {
+  const template = String(templatePrompt ?? "").trim();
+  const fallback = buildTaskPrompt(taskPrompt, inputPayload);
+  if (!template) return fallback;
+
+  const inputJson = JSON.stringify(inputPayload, null, 2);
+  let out = template;
+
+  if (out.includes("{{TASK_PROMPT}}")) {
+    out = out.replaceAll("{{TASK_PROMPT}}", taskPrompt);
+  }
+  if (out.includes("{{INPUT_JSON}}")) {
+    out = out.replaceAll("{{INPUT_JSON}}", inputJson);
+  }
+
+  if (out === template) {
+    out = `${template}\n\nINPUT JSON\n${inputJson}`;
+  }
+
+  return out;
 }
 
 function toDomain(value: string | null | undefined): string {
@@ -1879,6 +2040,7 @@ export async function POST(req: Request) {
           research_inputs: {
             website_data: compactWebsiteSnapshots,
             customer_profile_enrichment: asObject(baseCustomer?.webshopSignals)?.research ?? null,
+            manual_brand_revenue: customerResearchContext?.manualBrandRevenue ?? [],
             crm_customer_context: customerResearchContext,
             public_company_data: {
               signals: companySignals
@@ -1905,13 +2067,22 @@ export async function POST(req: Request) {
           },
           additional_instructions: mergedExtraInstructions || null
         };
-        const taskPrompt = buildTaskPrompt(`${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}`, profilePayload);
+        const taskPromptBase = `${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}`;
+        const taskPrompt = buildTaskPrompt(taskPromptBase, profilePayload);
         const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
+        const claudeSystemPrompt = settings.claudeCachingSystemPrompt || settings.globalSystemPrompt;
 
         let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
         let aiError: string | null = null;
         try {
-          aiResult = await generateWithGemini(finalPrompt, { jsonMode: true, maxOutputTokens: profileMaxTokens });
+          aiResult = await generateWithGemini(finalPrompt, {
+            jsonMode: true,
+            maxOutputTokens: profileMaxTokens,
+            systemPrompt: claudeSystemPrompt,
+            userPrompt: buildClaudeUserPrompt(settings.claudeCachingUserPrompt, taskPromptBase, profilePayload),
+            usePromptCaching: true,
+            cacheTtl: settings.claudeCachingTtl
+          });
         } catch (error) {
           aiError = error instanceof Error ? error.message : "Gemini request failed";
         }
@@ -1933,15 +2104,17 @@ export async function POST(req: Request) {
           (firstStructured.categoriesToPitch?.length ?? 0) < 5 ||
           (firstStructured.nextBestActions?.length ?? 0) < 6;
         if (!aiError && outputTooShort) {
-          const retryPrompt = composePrompt(
-            settings.globalSystemPrompt,
-            buildTaskPrompt(
-              `${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}\n\nCRITICAL RETRY INSTRUCTION: The previous answer was too short or not parseable. Return only complete JSON shape with deeper commercial detail, quantified ranges, and concrete account-specific recommendations.`,
-              profilePayload
-            )
-          );
+          const retryTaskPrompt = `${taskBasePrompt}\n\n${deepProfileGuard}\n\n${deepProfileJsonShape}\n\nCRITICAL RETRY INSTRUCTION: The previous answer was too short or not parseable. Return only complete JSON shape with deeper commercial detail, quantified ranges, and concrete account-specific recommendations.`;
+          const retryPrompt = composePrompt(settings.globalSystemPrompt, buildTaskPrompt(retryTaskPrompt, profilePayload));
           try {
-            const retryResult = await generateWithGemini(retryPrompt, { jsonMode: true, maxOutputTokens: profileMaxTokens });
+            const retryResult = await generateWithGemini(retryPrompt, {
+              jsonMode: true,
+              maxOutputTokens: profileMaxTokens,
+              systemPrompt: claudeSystemPrompt,
+              userPrompt: buildClaudeUserPrompt(settings.claudeCachingUserPrompt, retryTaskPrompt, profilePayload),
+              usePromptCaching: true,
+              cacheTtl: settings.claudeCachingTtl
+            });
             if ((retryResult?.outputText?.trim().length ?? 0) > (aiResult?.outputText?.trim().length ?? 0)) {
               aiResult = retryResult;
             }
@@ -1960,27 +2133,29 @@ export async function POST(req: Request) {
             (structuredInsight.categoriesToPitch?.length ?? 0) < 4 ||
             (structuredInsight.nextBestActions?.length ?? 0) < 5);
         if (needsHardFallback) {
+          const hardFallbackTaskPrompt = [
+            "TASK: Deep commercial account research for one selected customer account.",
+            "Return ONLY valid JSON using the exact required JSON shape.",
+            "No markdown. No prose outside JSON.",
+            "Must include:",
+            "- fit_score, assortment_fit_score, potential_score, total_score",
+            "- year_1_purchase_potential low/base/high",
+            "- at least 8 recommended categories to pitch",
+            "- at least 8 next_best_actions",
+            "- score_drivers and assumptions with confidence."
+          ].join("\n");
           const hardFallbackPrompt = composePrompt(
             settings.globalSystemPrompt,
-            buildTaskPrompt(
-              [
-                "TASK: Deep commercial account research for one selected customer account.",
-                "Return ONLY valid JSON using the exact required JSON shape.",
-                "No markdown. No prose outside JSON.",
-                "Must include:",
-                "- fit_score, assortment_fit_score, potential_score, total_score",
-                "- year_1_purchase_potential low/base/high",
-                "- at least 8 recommended categories to pitch",
-                "- at least 8 next_best_actions",
-                "- score_drivers and assumptions with confidence."
-              ].join("\n"),
-              profilePayload
-            )
+            buildTaskPrompt(hardFallbackTaskPrompt, profilePayload)
           );
           try {
             const hardFallbackResult = await generateWithGemini(hardFallbackPrompt, {
               jsonMode: true,
-              maxOutputTokens: profileMaxTokens
+              maxOutputTokens: profileMaxTokens,
+              systemPrompt: claudeSystemPrompt,
+              userPrompt: buildClaudeUserPrompt(settings.claudeCachingUserPrompt, hardFallbackTaskPrompt, profilePayload),
+              usePromptCaching: true,
+              cacheTtl: settings.claudeCachingTtl
             });
             const hardFallbackInsight = hardFallbackResult?.outputText
               ? parseStructuredResearchInsight(hardFallbackResult.outputText)
@@ -2002,23 +2177,29 @@ export async function POST(req: Request) {
               website_data: compactWebsiteSnapshotsForRetry(websiteSnapshots)
             }
           };
+          const compactRetryTaskPrompt = [
+            "TASK: Deep commercial account research for one selected customer account.",
+            "Return ONLY valid JSON in the required shape.",
+            "No markdown. No code fences. No prose outside JSON.",
+            "Keep text concise but complete for all required fields.",
+            "Prioritize parseable, complete JSON over verbosity."
+          ].join("\n");
           const compactRetryPrompt = composePrompt(
             settings.globalSystemPrompt,
-            buildTaskPrompt(
-              [
-                "TASK: Deep commercial account research for one selected customer account.",
-                "Return ONLY valid JSON in the required shape.",
-                "No markdown. No code fences. No prose outside JSON.",
-                "Keep text concise but complete for all required fields.",
-                "Prioritize parseable, complete JSON over verbosity."
-              ].join("\n"),
-              compactPayload
-            )
+            buildTaskPrompt(compactRetryTaskPrompt, compactPayload)
           );
           try {
             const compactResult = await generateWithGemini(compactRetryPrompt, {
               jsonMode: true,
-              maxOutputTokens: profileMaxTokens
+              maxOutputTokens: profileMaxTokens,
+              systemPrompt: claudeSystemPrompt,
+              userPrompt: buildClaudeUserPrompt(
+                settings.claudeCachingUserPrompt,
+                compactRetryTaskPrompt,
+                compactPayload
+              ),
+              usePromptCaching: true,
+              cacheTtl: settings.claudeCachingTtl
             });
             const compactInsight = compactResult?.outputText
               ? parseStructuredResearchInsight(compactResult.outputText)
@@ -2060,6 +2241,7 @@ export async function POST(req: Request) {
                 plansCount: customerResearchContext.plans.length,
                 activitiesCount: customerResearchContext.activities.length,
                 salesRecordsCount: customerResearchContext.salesRecords.length,
+                manualBrandRevenueCount: customerResearchContext.manualBrandRevenue.length,
                 hasPriorResearch: Boolean(customerResearchContext.priorResearch),
                 customerUpdatedAt: customerResearchContext.customer?.updatedAt ?? null
               }
@@ -2115,6 +2297,7 @@ export async function POST(req: Request) {
       ).slice(0, 40);
       const sniGroups = likelySniGroupFromIndustry(industry);
       const taskBasePrompt = body.basePrompt?.trim() || settings.similarCustomersPrompt;
+      const claudeSystemPrompt = settings.claudeCachingSystemPrompt || settings.globalSystemPrompt;
       const similarResponseGuard =
         [
           "RESPONSE REQUIREMENTS (MANDATORY):",
@@ -2217,7 +2400,12 @@ export async function POST(req: Request) {
       let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
       let aiError: string | null = null;
       try {
-        aiResult = await generateWithGemini(finalPrompt);
+        aiResult = await generateWithGemini(finalPrompt, {
+          systemPrompt: claudeSystemPrompt,
+          userPrompt: primaryTaskPrompt,
+          usePromptCaching: true,
+          cacheTtl: settings.claudeCachingTtl
+        });
       } catch (error) {
         aiError = error instanceof Error ? error.message : "Gemini request failed";
       }
@@ -2314,7 +2502,12 @@ export async function POST(req: Request) {
         finalPrompt = composePrompt(settings.globalSystemPrompt, fallbackTaskPrompt);
 
         try {
-          const fallbackAiResult = await generateWithGemini(finalPrompt);
+          const fallbackAiResult = await generateWithGemini(finalPrompt, {
+            systemPrompt: claudeSystemPrompt,
+            userPrompt: fallbackTaskPrompt,
+            usePromptCaching: true,
+            cacheTtl: settings.claudeCachingTtl
+          });
           if (fallbackAiResult?.outputText) {
             aiResult = fallbackAiResult;
             similarCustomers = extractSimilarCandidates(extractJsonValue(fallbackAiResult.outputText), maxSimilar);
@@ -2381,7 +2574,12 @@ export async function POST(req: Request) {
         });
 
         try {
-          const retryResult = await generateWithGemini(composePrompt(settings.globalSystemPrompt, retryPrompt));
+          const retryResult = await generateWithGemini(composePrompt(settings.globalSystemPrompt, retryPrompt), {
+            systemPrompt: claudeSystemPrompt,
+            userPrompt: retryPrompt,
+            usePromptCaching: true,
+            cacheTtl: settings.claudeCachingTtl
+          });
           if (retryResult?.outputText) {
             similarCustomers = extractSimilarCandidates(extractJsonValue(retryResult.outputText), maxSimilar).map(
               (candidate) => ({
@@ -2413,9 +2611,22 @@ export async function POST(req: Request) {
         }
 
         similarCustomers = similarCustomers.map((candidate) => {
-          const matchByName = crmByName.get(normalizeCompanyName(candidate.name));
+          const normalizedCandidate = normalizeCompanyName(candidate.name);
+          const matchByName = crmByName.get(normalizedCandidate);
           const matchByDomain = crmByDomain.get(websiteDomain(candidate.website));
-          const match = matchByDomain || matchByName || null;
+          let fuzzyMatch: { id: string; name: string } | null = null;
+          if (!matchByDomain && !matchByName && normalizedCandidate) {
+            let bestScore = 0;
+            for (const crm of existingCustomersContext.refs) {
+              const score = fuzzyCompanyNameScore(candidate.name, crm.name);
+              if (score > bestScore) {
+                bestScore = score;
+                fuzzyMatch = crm;
+              }
+            }
+            if (bestScore < 0.92) fuzzyMatch = null;
+          }
+          const match = matchByDomain || matchByName || fuzzyMatch || null;
           return {
             ...candidate,
             alreadyCustomer: Boolean(match),
@@ -2563,6 +2774,7 @@ export async function POST(req: Request) {
       research_inputs: {
         website_data: compactWebsiteSnapshots,
         similar_candidates_from_crm: similarCustomers,
+        manual_brand_revenue: asArray(asObject(baseCustomer?.webshopSignals)?.manualBrandRevenue),
         internal_notes: [baseCustomer?.notes].filter(Boolean)
       },
       generated_context: aiPrompt,
@@ -2574,12 +2786,49 @@ export async function POST(req: Request) {
       additional_instructions: mergedExtraInstructions || null
     });
     const finalPrompt = composePrompt(settings.globalSystemPrompt, taskPrompt);
+    const claudeSystemPrompt = settings.claudeCachingSystemPrompt || settings.globalSystemPrompt;
 
     let aiResult: Awaited<ReturnType<typeof generateWithGemini>> = null;
     let aiError: string | null = null;
 
     try {
-      aiResult = await generateWithGemini(finalPrompt);
+      aiResult = await generateWithGemini(finalPrompt, {
+        systemPrompt: claudeSystemPrompt,
+        userPrompt: buildClaudeUserPrompt(settings.claudeCachingUserPrompt, taskBasePrompt, {
+          selected_account: {
+            id: baseCustomer?.id ?? null,
+            name: companyName,
+            country,
+            region,
+            industry,
+            segment_focus: segmentFocus,
+            seller_owner: seller,
+            legacy_potential_score: potentialScore
+          },
+          vendora: {
+            countries_served: settings.countries,
+            positioning: "Vendora Nordic channel distributor",
+            assortment_catalog: vendorCatalogWebsites,
+            strategic_focus: settings.industries,
+            constraints: []
+          },
+          research_inputs: {
+            website_data: compactWebsiteSnapshots,
+            similar_candidates_from_crm: similarCustomers,
+            manual_brand_revenue: asArray(asObject(baseCustomer?.webshopSignals)?.manualBrandRevenue),
+            internal_notes: [baseCustomer?.notes].filter(Boolean)
+          },
+          generated_context: aiPrompt,
+          filters: {
+            scope,
+            segment_focus: segmentFocus,
+            max_similar: maxSimilar
+          },
+          additional_instructions: mergedExtraInstructions || null
+        }),
+        usePromptCaching: true,
+        cacheTtl: settings.claudeCachingTtl
+      });
     } catch (error) {
       aiError = error instanceof Error ? error.message : "Gemini request failed";
     }

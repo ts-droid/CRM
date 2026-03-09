@@ -324,6 +324,9 @@ type ResearchConfig = {
   pxwebDefaultContentCode: string;
   globalSystemPrompt: string;
   fullResearchPrompt: string;
+  claudeCachingSystemPrompt: string;
+  claudeCachingUserPrompt: string;
+  claudeCachingTtl: "5m" | "1h";
   similarCustomersPrompt: string;
   followupCustomerClickPrompt: string;
   quickSimilarExtraInstructions: string;
@@ -374,6 +377,57 @@ type AdminUser = {
   updatedAt: string;
 };
 
+const CLAUDE_V22_SYSTEM_PROMPT =
+  "You are a verified account intelligence analyst and channel sales strategist for Vendora Nordic.\n\n" +
+  "Your task is to research a target reseller/customer account with strict source discipline, then produce a commercially actionable JSON analysis.\n\n" +
+  "Execution flow:\n" +
+  "- Phase 1 (Steps 1-6): Verified Research\n" +
+  "- Phase 2 (Step 7): Commercial JSON Output\n\n" +
+  "GLOBAL RULES\n" +
+  "1) Company-specific only. Do not infer from generic industry assumptions.\n" +
+  "2) Attempt deep verification before concluding cannot verify.\n" +
+  "3) Source priority: official website > annual report > national registry > financial database > credible press.\n" +
+  "4) Include year on all numeric metrics.\n" +
+  "5) Use ranges only if precise values are unavailable; label as Estimated + confidence + signals.\n" +
+  "6) Major claims must include short source note.\n" +
+  "7) Label all uncertain fields as Verified | Estimated | NeedsValidation.\n" +
+  "8) Confidence labels: High | Medium | Low.\n" +
+  "9) Do not inflate scoring. Ground scores in verified evidence.\n" +
+  "10) If revenue/category split/size remain NeedsValidation, deduct 5-10 points and list deductions in score_adjustments_from_data_gaps.\n" +
+  "11) Output language: English only.\n" +
+  "12) Return valid JSON only. No markdown fences.\n" +
+  "13) Never invent named contacts, revenues, employee counts, or store counts.\n" +
+  "14) If named contacts are not verified, provide role-based contact paths.\n\n" +
+  "REQUIRED SOURCE TYPES TO ATTEMPT\n" +
+  "- Official company website\n" +
+  "- Annual report / registry records\n" +
+  "- National company registry\n" +
+  "- Financial databases\n" +
+  "- Trade/business press\n" +
+  "- LinkedIn company + role search\n\n" +
+  "SCORING\n" +
+  "- FitScore (0-100): category overlap + positioning + channel + price/margin + geo/logistics + strategic alignment\n" +
+  "- PotentialScore (0-100): verified scale proxy + share-of-wallet + upsell breadth + execution likelihood\n" +
+  "- TotalScore = 0.55 * FitScore + 0.45 * PotentialScore\n\n" +
+  "OUTPUT FORMAT\n" +
+  "Return the exact JSON schema requested in the user task. Do not add extra sections.";
+
+const CLAUDE_V22_USER_PROMPT =
+  "Perform full account intelligence analysis using the framework in your system instructions.\n\n" +
+  "INPUT JSON\n{{INPUT_JSON}}\n\n" +
+  "Run sequentially:\n" +
+  "- Step 1: Company identification (legal name, website, HQ, countries, segment)\n" +
+  "- Step 2: Core company metrics (revenue, employees, ownership, legal form, founded)\n" +
+  "- Step 3: Retail/physical presence (stores, channels, logistics)\n" +
+  "- Step 4: Products/categories (only verified shares)\n" +
+  "- Step 5: Customer/market focus\n" +
+  "- Step 6: Contacts and stakeholders\n" +
+  "- Step 7: Commercial JSON output\n\n" +
+  "Important:\n" +
+  "- Use only company-specific evidence from attempted sources.\n" +
+  "- If key fields are missing, apply explicit score deductions.\n" +
+  "- Return valid JSON only.";
+
 const EMPTY_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://reseller.vendora.se", "https://www.vendora.se"],
   brandWebsites: [],
@@ -406,6 +460,9 @@ const EMPTY_CONFIG: ResearchConfig = {
     "- Mark unknowns as Estimated + confidence.\n" +
     "- If key data is missing, stay conservative.\n" +
     "- Keep output CRM-ready and actionable.",
+  claudeCachingSystemPrompt: CLAUDE_V22_SYSTEM_PROMPT,
+  claudeCachingUserPrompt: CLAUDE_V22_USER_PROMPT,
+  claudeCachingTtl: "1h",
   similarCustomersPrompt:
     "Find up to 8 similar reseller customers based on this selected account. Use country/region scope first and fall back to country when needed. Prefer public company registers/directories and include confidence + source signals.",
   followupCustomerClickPrompt:
@@ -906,6 +963,9 @@ function ResearchAdminContent() {
       pxwebDefaultContentCode: String(form.get("pxwebDefaultContentCode") ?? "").trim(),
       globalSystemPrompt: String(form.get("globalSystemPrompt") ?? "").trim(),
       fullResearchPrompt: String(form.get("fullResearchPrompt") ?? "").trim(),
+      claudeCachingSystemPrompt: String(form.get("claudeCachingSystemPrompt") ?? "").trim(),
+      claudeCachingUserPrompt: String(form.get("claudeCachingUserPrompt") ?? "").trim(),
+      claudeCachingTtl: String(form.get("claudeCachingTtl") ?? "1h") === "5m" ? "5m" : "1h",
       similarCustomersPrompt: String(form.get("similarCustomersPrompt") ?? "").trim(),
       followupCustomerClickPrompt: String(form.get("followupCustomerClickPrompt") ?? "").trim(),
       quickSimilarExtraInstructions: String(form.get("quickSimilarExtraInstructions") ?? "").trim(),
@@ -959,6 +1019,20 @@ function ResearchAdminContent() {
     } finally {
       setSettingsLoading(false);
     }
+  }
+
+  function applyClaudeV22Template() {
+    setConfig((previous) => ({
+      ...previous,
+      claudeCachingSystemPrompt: CLAUDE_V22_SYSTEM_PROMPT,
+      claudeCachingUserPrompt: CLAUDE_V22_USER_PROMPT,
+      claudeCachingTtl: "1h"
+    }));
+    setSettingsStatus(
+      lang === "sv"
+        ? "Claude V2.2-template inläst i promptfälten. Spara för att applicera."
+        : "Claude V2.2 template loaded into prompt fields. Save to apply."
+    );
   }
 
   function addSellerDraft() {
@@ -2485,6 +2559,60 @@ function ResearchAdminContent() {
                       : "Question prompt: Find similar customers (AI)"
                   }
                 />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.9rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Claude cached system prompt" : "Claude cached system prompt"}
+                </p>
+                <p className="crm-subtle" style={{ marginTop: 0, marginBottom: "0.45rem" }}>
+                  {lang === "sv"
+                    ? "V2.2: statisk systemdel cachas i Claude (breakpoint #1)."
+                    : "V2.2: static system block cached in Claude (breakpoint #1)."}
+                </p>
+                <div style={{ marginBottom: "0.45rem" }}>
+                  <button type="button" className="crm-btn ghost" onClick={applyClaudeV22Template}>
+                    {lang === "sv" ? "Ladda Claude V2.2-template" : "Load Claude V2.2 template"}
+                  </button>
+                </div>
+                <textarea
+                  className="crm-textarea"
+                  name="claudeCachingSystemPrompt"
+                  defaultValue={config.claudeCachingSystemPrompt}
+                  placeholder={
+                    lang === "sv"
+                      ? "Statisk systemprompt för Claude (cache-control breakpoint)"
+                      : "Static system prompt for Claude (cache-control breakpoint)"
+                  }
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Claude dynamic user prompt template" : "Claude dynamic user prompt template"}
+                </p>
+                <p className="crm-subtle" style={{ marginTop: 0, marginBottom: "0.45rem" }}>
+                  {lang === "sv"
+                    ? "Dynamisk del per körning. Måste innehålla {{INPUT_JSON}}."
+                    : "Dynamic per run block. Must include {{INPUT_JSON}}."}
+                </p>
+                <textarea
+                  className="crm-textarea"
+                  name="claudeCachingUserPrompt"
+                  defaultValue={config.claudeCachingUserPrompt}
+                  placeholder={
+                    lang === "sv"
+                      ? "Använd {{INPUT_JSON}} som placeholder för payload"
+                      : "Use {{INPUT_JSON}} placeholder for payload"
+                  }
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
+                  {lang === "sv" ? "Claude cache TTL" : "Claude cache TTL"}
+                </p>
+                <select className="crm-input" name="claudeCachingTtl" defaultValue={config.claudeCachingTtl}>
+                  <option value="1h">1h</option>
+                  <option value="5m">5m</option>
+                </select>
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>

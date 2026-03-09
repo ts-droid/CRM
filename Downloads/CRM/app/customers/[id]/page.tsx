@@ -66,7 +66,23 @@ type Customer = {
       nextBestActions?: string[] | null;
       rawOutput?: string | null;
     }> | null;
+    manualBrandRevenue?: Array<{
+      brand?: string;
+      revenue?: number;
+      currency?: string;
+      year?: number;
+      updatedAt?: string;
+      updatedBy?: string | null;
+    }> | null;
   } | null;
+};
+
+type ManualBrandRevenueRow = {
+  key: string;
+  brand: string;
+  revenue: string;
+  currency: string;
+  year: string;
 };
 
 type Activity = {
@@ -541,6 +557,16 @@ function emptyContactDraft(): ContactDraft {
   };
 }
 
+function emptyManualBrandRevenueRow(): ManualBrandRevenueRow {
+  return {
+    key: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    brand: "",
+    revenue: "",
+    currency: "SEK",
+    year: String(new Date().getUTCFullYear())
+  };
+}
+
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const salesSectionEnabled = process.env.NEXT_PUBLIC_FEATURE_SALES_SECTION === "true";
   const { lang } = useI18n();
@@ -572,9 +598,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarStatus, setSimilarStatus] = useState("");
   const [similarResults, setSimilarResults] = useState<SimilarCustomer[]>([]);
-  const [similarAiOutput, setSimilarAiOutput] = useState("");
   const [similarSortBy, setSimilarSortBy] = useState<"fit" | "country" | "region" | "confidence">("fit");
   const [similarSortDir, setSimilarSortDir] = useState<"asc" | "desc">("desc");
+  const [hideExistingInSimilar, setHideExistingInSimilar] = useState(true);
   const [similarScopeUsed, setSimilarScopeUsed] = useState<"region" | "country" | null>(null);
   const [selectedSimilar, setSelectedSimilar] = useState<SimilarCustomer | null>(null);
   const [selectedSimilarResearch, setSelectedSimilarResearch] = useState("");
@@ -586,6 +612,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [selectedCountry, setSelectedCountry] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [selectedResearchArchiveYear, setSelectedResearchArchiveYear] = useState<string>("");
+  const [manualBrandRevenueRows, setManualBrandRevenueRows] = useState<ManualBrandRevenueRow[]>([
+    emptyManualBrandRevenueRow()
+  ]);
   const [loading, setLoading] = useState(true);
 
   async function loadCustomer() {
@@ -602,6 +631,24 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     const data = (await res.json()) as Customer;
     setCustomer(data);
     setSelectedCountry(data.country ?? "");
+    const manualRows = (Array.isArray(data.webshopSignals?.manualBrandRevenue)
+      ? data.webshopSignals?.manualBrandRevenue
+      : []
+    )
+      .map((row) => ({
+        key: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        brand: String(row?.brand ?? "").trim(),
+        revenue:
+          typeof row?.revenue === "number" && Number.isFinite(row.revenue)
+            ? String(Number(row.revenue.toFixed(2)))
+            : "",
+        currency: String(row?.currency ?? "SEK").trim().toUpperCase() || "SEK",
+        year: Number.isFinite(Number(row?.year))
+          ? String(Math.round(Number(row?.year)))
+          : String(new Date().getUTCFullYear())
+      }))
+      .filter((row) => row.brand || row.revenue);
+    setManualBrandRevenueRows(manualRows.length > 0 ? manualRows : [emptyManualBrandRevenueRow()]);
     setLoading(false);
   }
 
@@ -930,9 +977,12 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     return rows;
   }, [latestResearchEntry, selectedArchivedResearch]);
   const latestResearchId = latestResearchEntry?.id ?? null;
-  const similarAiSections = parseMarkdownSections(similarAiOutput);
-  const lookalikeRows = parseLookalikeTable(similarAiOutput);
-  const aiDrillNames = extractDrillCandidatesFromText(similarAiOutput, 24);
+  const manualBrandRevenueTotal = useMemo(() => {
+    return manualBrandRevenueRows.reduce((sum, row) => {
+      const value = Number(row.revenue);
+      return Number.isFinite(value) && value >= 0 ? sum + value : sum;
+    }, 0);
+  }, [manualBrandRevenueRows]);
   const confidenceRank = (value: string | null | undefined) => {
     const v = String(value ?? "").toLowerCase();
     if (v.startsWith("high")) return 3;
@@ -949,6 +999,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     const fitB = Number(b.fitScore ?? b.matchScore ?? 0);
     return dir * (fitA - fitB);
   });
+  const visibleSimilarResults = sortedSimilarResults.filter((row) => (hideExistingInSimilar ? !row.alreadyCustomer : true));
   const similarResearchSections = parseMarkdownSections(selectedSimilarResearch);
 
   const planStatusLabel = (status: Customer["plans"][number]["status"]) =>
@@ -1090,9 +1141,37 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     }
   }
 
+  function updateManualBrandRevenueRow(
+    key: string,
+    patch: Partial<Pick<ManualBrandRevenueRow, "brand" | "revenue" | "currency" | "year">>
+  ) {
+    setManualBrandRevenueRows((prev) =>
+      prev.map((row) => (row.key === key ? { ...row, ...patch } : row))
+    );
+  }
+
+  function addManualBrandRevenueRow() {
+    setManualBrandRevenueRows((prev) => [...prev, emptyManualBrandRevenueRow()]);
+  }
+
+  function removeManualBrandRevenueRow(key: string) {
+    setManualBrandRevenueRows((prev) => {
+      const next = prev.filter((row) => row.key !== key);
+      return next.length > 0 ? next : [emptyManualBrandRevenueRow()];
+    });
+  }
+
   async function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const manualBrandRevenue = manualBrandRevenueRows
+      .map((row) => ({
+        brand: row.brand.trim(),
+        revenue: Number(row.revenue),
+        currency: row.currency.trim().toUpperCase() || "SEK",
+        year: Number(row.year)
+      }))
+      .filter((row) => row.brand && Number.isFinite(row.revenue) && row.revenue >= 0);
 
     const res = await fetch(`/api/customers/${params.id}`, {
       method: "PATCH",
@@ -1106,7 +1185,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         seller: form.get("seller"),
         website: form.get("website"),
         notes: form.get("notes"),
-        potentialScore: Number(form.get("potentialScore") || 50)
+        potentialScore: Number(form.get("potentialScore") || 50),
+        manualBrandRevenue
       })
     });
 
@@ -1125,7 +1205,6 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     setSelectedSimilar(null);
     setSelectedSimilarResearch("");
     setSelectedSimilarResearchError("");
-    setSimilarAiOutput("");
 
     const initialScope: "region" | "country" = customer?.region ? "region" : "country";
 
@@ -1168,9 +1247,47 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         aiOutput = fallback.aiResult?.outputText ?? aiOutput;
       }
 
+      if (rows.length === 0 && aiOutput.trim()) {
+        const fallbackFromTable = parseLookalikeTable(aiOutput).map((row) => ({
+          id: `ai-fallback-${row.rank}-${row.company.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+          name: row.company,
+          country: row.country || customer?.country || null,
+          region: customer?.region ?? null,
+          industry: customer?.industry ?? null,
+          seller: null,
+          potentialScore: Number(row.potential) || 50,
+          matchScore: Number(row.total) || Number(row.fit) || 50,
+          fitScore: Number(row.fit) || null,
+          potentialScoreRaw: Number(row.potential) || null,
+          totalScore: Number(row.total) || null,
+          confidence: row.confidence?.toLowerCase() || "low",
+          sourceType: "ai-chat-table",
+          alreadyCustomer: false
+        } satisfies SimilarCustomer));
+        if (fallbackFromTable.length > 0) {
+          rows = fallbackFromTable;
+        } else {
+          const fallbackNames = extractDrillCandidatesFromText(aiOutput, 50);
+          if (fallbackNames.length > 0) {
+            rows = fallbackNames.map((name, index) => ({
+              id: `ai-name-${index}-${name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+              name,
+              country: customer?.country ?? null,
+              region: customer?.region ?? null,
+              industry: customer?.industry ?? null,
+              seller: null,
+              potentialScore: 50,
+              matchScore: 50,
+              confidence: "low",
+              sourceType: "ai-chat",
+              alreadyCustomer: false
+            }));
+          }
+        }
+      }
+
       setSimilarResults(rows);
       setSimilarScopeUsed(scopeUsed);
-      setSimilarAiOutput(aiOutput);
 
       const topMatches = rows.slice(0, 3).map((item) => item.name).join(", ");
       if (rows.length === 0 && aiError) {
@@ -1519,6 +1636,82 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   placeholder={lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}
                 />
               </div>
+              <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+                <article className="crm-item">
+                  <div className="crm-item-head">
+                    <h4 style={{ margin: 0 }}>
+                      {lang === "sv" ? "Manuell omsättning per varumärke" : "Manual revenue by brand"}
+                    </h4>
+                    <button
+                      type="button"
+                      className="crm-button crm-button-secondary"
+                      style={{ padding: "0.25rem 0.5rem" }}
+                      onClick={addManualBrandRevenueRow}
+                    >
+                      {lang === "sv" ? "Lägg till rad" : "Add row"}
+                    </button>
+                  </div>
+                  <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                    {lang === "sv"
+                      ? "Används i AI-analys tills backend-API är kopplat."
+                      : "Used in AI analysis until backend API integration is enabled."}
+                  </p>
+                  <div className="crm-list" style={{ marginTop: "0.55rem" }}>
+                    {manualBrandRevenueRows.map((row) => (
+                      <article key={row.key} className="crm-item">
+                        <div className="crm-row" style={{ gap: "0.5rem" }}>
+                          <input
+                            className="crm-input"
+                            value={row.brand}
+                            placeholder={lang === "sv" ? "Varumärke" : "Brand"}
+                            onChange={(event) => updateManualBrandRevenueRow(row.key, { brand: event.target.value })}
+                          />
+                          <input
+                            className="crm-input"
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={row.revenue}
+                            placeholder={lang === "sv" ? "Omsättning" : "Revenue"}
+                            onChange={(event) => updateManualBrandRevenueRow(row.key, { revenue: event.target.value })}
+                          />
+                          <input
+                            className="crm-input"
+                            value={row.currency}
+                            placeholder="SEK"
+                            onChange={(event) =>
+                              updateManualBrandRevenueRow(row.key, {
+                                currency: event.target.value.toUpperCase().slice(0, 8)
+                              })
+                            }
+                          />
+                          <input
+                            className="crm-input"
+                            type="number"
+                            min={2000}
+                            max={2100}
+                            value={row.year}
+                            placeholder={lang === "sv" ? "År" : "Year"}
+                            onChange={(event) => updateManualBrandRevenueRow(row.key, { year: event.target.value })}
+                          />
+                          <button
+                            type="button"
+                            className="crm-button crm-button-secondary"
+                            style={{ padding: "0.25rem 0.5rem" }}
+                            onClick={() => removeManualBrandRevenueRow(row.key)}
+                          >
+                            {lang === "sv" ? "Ta bort" : "Remove"}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                  <p className="crm-subtle" style={{ marginTop: "0.55rem" }}>
+                    {lang === "sv" ? "Total manuellt angiven omsättning" : "Total manual revenue"}:{" "}
+                    {manualBrandRevenueTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })} SEK
+                  </p>
+                </article>
+              </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <textarea className="crm-textarea" name="notes" defaultValue={customer.notes ?? ""} placeholder={lang === "sv" ? "Noteringar" : "Notes"} />
               </div>
@@ -1547,114 +1740,6 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 </div>
               ) : null}
               {similarStatus ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{similarStatus}</p> : null}
-              {similarAiOutput ? (
-                <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-                  <article className="crm-item">
-                    <h4 style={{ margin: 0 }}>{lang === "sv" ? "AI-svar (chat)" : "AI output (chat)"}</h4>
-                    {similarAiSections.length > 0 ? (
-                      <div className="crm-list" style={{ marginTop: "0.55rem" }}>
-                        {similarAiSections.map((section) => (
-                          <article key={section.title} className="crm-item">
-                            <h4 style={{ margin: 0 }}>{section.title}</h4>
-                            <pre className="crm-pre" style={{ marginTop: "0.45rem" }}>{section.body}</pre>
-                          </article>
-                        ))}
-                      </div>
-                    ) : (
-                      <pre className="crm-pre" style={{ marginTop: "0.55rem" }}>{similarAiOutput}</pre>
-                    )}
-                    {lookalikeRows.length > 0 ? (
-                      <div style={{ marginTop: "0.7rem", overflowX: "auto" }}>
-                        <p className="crm-subtle" style={{ marginBottom: "0.45rem" }}>
-                          {lang === "sv" ? "Lookalike targets (klicka bolag för drill-down)" : "Lookalike targets (click company for drill-down)"}
-                        </p>
-                        <table className="crm-table">
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th>Company</th>
-                              <th>{lang === "sv" ? "Land" : "Country"}</th>
-                              <th>Seg</th>
-                              <th>Fit</th>
-                              <th>Pot</th>
-                              <th>Total</th>
-                              <th>{lang === "sv" ? "Säkerhet" : "Confidence"}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {lookalikeRows.map((row) => (
-                              <tr key={`${row.rank}-${row.company}`}>
-                                <td>{row.rank}</td>
-                                <td>
-                                  <button
-                                    type="button"
-                                    className="crm-button crm-button-secondary"
-                                    style={{ padding: "0.25rem 0.5rem" }}
-                                    onClick={() =>
-                                      runDeepResearchForSimilar({
-                                        id: `table-${row.rank}-${row.company.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
-                                        name: row.company,
-                                        country: row.country || customer.country || null,
-                                        region: customer.region ?? null,
-                                        industry: customer.industry ?? null,
-                                        seller: null,
-                                        potentialScore: Number(row.potential) || 50,
-                                        matchScore: Number(row.total) || Number(row.fit) || 50,
-                                        confidence: row.confidence.toLowerCase(),
-                                        sourceType: "ai-chat-table"
-                                      })
-                                    }
-                                  >
-                                    {row.company}
-                                  </button>
-                                </td>
-                                <td>{row.country}</td>
-                                <td>{row.segment}</td>
-                                <td>{row.fit}</td>
-                                <td>{row.potential}</td>
-                                <td>{row.total}</td>
-                                <td>{row.confidence}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : null}
-                    {aiDrillNames.length > 0 ? (
-                      <div style={{ marginTop: "0.7rem" }}>
-                        <p className="crm-subtle" style={{ marginBottom: "0.4rem" }}>
-                          {lang === "sv" ? "Klicka för fördjupad research:" : "Click for deep research:"}
-                        </p>
-                        <div className="crm-row">
-                          {aiDrillNames.map((name) => (
-                            <button
-                              key={name}
-                              type="button"
-                              className="crm-button crm-button-secondary"
-                              onClick={() =>
-                                runDeepResearchForSimilar({
-                                  id: `ai-${name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
-                                  name,
-                                  country: customer.country ?? null,
-                                  region: customer.region ?? null,
-                                  industry: customer.industry ?? null,
-                                  seller: null,
-                                  potentialScore: 50,
-                                  matchScore: 50,
-                                  confidence: "low",
-                                  sourceType: "ai-chat"
-                                })
-                              }
-                            >
-                              {name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </article>
-                </div>
-              ) : null}
               {similarResults.length > 0 ? (
                 <div className="crm-list" style={{ marginTop: "0.7rem" }}>
                   <div className="crm-row" style={{ marginBottom: "0.5rem" }}>
@@ -1668,6 +1753,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                       <option value="desc">{lang === "sv" ? "Högst först" : "Highest first"}</option>
                       <option value="asc">{lang === "sv" ? "Lägst först" : "Lowest first"}</option>
                     </select>
+                    <label className="crm-check">
+                      <input
+                        type="checkbox"
+                        checked={hideExistingInSimilar}
+                        onChange={(event) => setHideExistingInSimilar(event.target.checked)}
+                      />
+                      <span>{lang === "sv" ? "Dölj befintliga kunder" : "Hide existing customers"}</span>
+                    </label>
                   </div>
                   <div style={{ overflowX: "auto" }}>
                     <table className="crm-table">
@@ -1685,7 +1778,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                         </tr>
                       </thead>
                       <tbody>
-                        {sortedSimilarResults.map((row, index) => (
+                        {visibleSimilarResults.map((row, index) => (
                           <tr key={`${row.id || row.name}-${row.website || ""}`}>
                             <td>{index + 1}</td>
                             <td>
@@ -1710,9 +1803,11 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                       </tbody>
                     </table>
                   </div>
-                  {sortedSimilarResults.length > 0 ? (
+                  {visibleSimilarResults.length > 0 ? (
                     <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
-                      {lang === "sv" ? `Visar ${sortedSimilarResults.length} kandidater.` : `Showing ${sortedSimilarResults.length} candidates.`}
+                      {lang === "sv"
+                        ? `Visar ${visibleSimilarResults.length} kandidater (${sortedSimilarResults.length} totalt).`
+                        : `Showing ${visibleSimilarResults.length} candidates (${sortedSimilarResults.length} total).`}
                     </p>
                   ) : null}
                 </div>
