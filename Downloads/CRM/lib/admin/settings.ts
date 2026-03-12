@@ -31,8 +31,6 @@ export type ResearchConfig = {
   claudeCachingUserPrompt: string;
   claudeCachingTtl: "5m" | "1h";
   similarCustomersPrompt: string;
-  followupCustomerClickPrompt: string;
-  quickSimilarExtraInstructions: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
   industries: string[];
@@ -88,20 +86,21 @@ const CLAUDE_V22_SYSTEM_PROMPT =
   "Return the exact JSON schema requested in the user task. Do not add extra sections.";
 
 const CLAUDE_V22_USER_PROMPT =
-  "Perform full account intelligence analysis using the framework in your system instructions.\n\n" +
+  "{{TASK_PROMPT}}\n\n" +
   "INPUT JSON\n{{INPUT_JSON}}\n\n" +
-  "Run sequentially:\n" +
+  "Run the analysis sequentially using the framework in your system instructions:\n" +
   "- Step 1: Company identification (legal name, website, HQ, countries, segment)\n" +
   "- Step 2: Core company metrics (revenue, employees, ownership, legal form, founded)\n" +
   "- Step 3: Retail/physical presence (stores, channels, logistics)\n" +
   "- Step 4: Products/categories (only verified shares)\n" +
   "- Step 5: Customer/market focus\n" +
   "- Step 6: Contacts and stakeholders\n" +
-  "- Step 7: Commercial JSON output\n\n" +
+  "- Step 7: Commercial JSON output following the EXACT JSON SHAPE specified above\n\n" +
   "Important:\n" +
   "- Use only company-specific evidence from attempted sources.\n" +
   "- If key fields are missing, apply explicit score deductions.\n" +
-  "- Return valid JSON only.";
+  "- Return valid JSON only.\n" +
+  "- The JSON output MUST follow the exact schema specified in the task prompt above.";
 
 export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
   vendorWebsites: ["https://reseller.vendora.se", "https://www.vendora.se"],
@@ -186,20 +185,6 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
     "- FitScore (0-100)\n" +
     "- PotentialScore (0-100)\n" +
     "- TotalScore (0-100) = 0.55 * FitScore + 0.45 * PotentialScore",
-  followupCustomerClickPrompt:
-    "TASK: Deep commercial analysis of one selected target account for Vendora Nordic.\n\n" +
-    "STRICT RULES:\n" +
-    "- Return ONLY valid JSON.\n" +
-    "- No markdown.\n" +
-    "- No prose outside JSON.\n" +
-    "- Do not invent facts, named contacts, revenues, or buyer names.\n" +
-    "- If no verified named contacts exist, provide role-based contact paths.\n\n" +
-    "SCORING:\n" +
-    "- FitScore (0-100)\n" +
-    "- PotentialScore (0-100)\n" +
-    "- TotalScore (0-100) = 0.55 * FitScore + 0.45 * PotentialScore",
-  quickSimilarExtraInstructions:
-    "Keep the response short. Focus on similar profile in segment, geography and category focus.",
   extraInstructions: "",
   defaultScope: "region",
   industries: [
@@ -377,10 +362,6 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
     similarCustomersPrompt: String(
       value.similarCustomersPrompt ?? value.quickSimilarQuestionPrompt ?? value.quickSimilarBasePrompt ?? ""
     ).trim(),
-    followupCustomerClickPrompt: String(
-      value.followupCustomerClickPrompt ?? value.quickSimilarFollowupPrompt ?? ""
-    ).trim(),
-    quickSimilarExtraInstructions: String(value.quickSimilarExtraInstructions ?? "").trim(),
     extraInstructions: String(value.extraInstructions ?? "").trim(),
     defaultScope,
     industries: uniqueTrimmed(value.industries, 50),
@@ -429,10 +410,6 @@ export async function getResearchConfig(): Promise<ResearchConfig> {
         normalized.claudeCachingUserPrompt || DEFAULT_RESEARCH_CONFIG.claudeCachingUserPrompt,
       claudeCachingTtl: normalized.claudeCachingTtl || DEFAULT_RESEARCH_CONFIG.claudeCachingTtl,
       similarCustomersPrompt: normalized.similarCustomersPrompt || DEFAULT_RESEARCH_CONFIG.similarCustomersPrompt,
-      followupCustomerClickPrompt:
-        normalized.followupCustomerClickPrompt || DEFAULT_RESEARCH_CONFIG.followupCustomerClickPrompt,
-      quickSimilarExtraInstructions:
-        normalized.quickSimilarExtraInstructions || DEFAULT_RESEARCH_CONFIG.quickSimilarExtraInstructions,
       industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
       countries: normalized.countries.length ? normalized.countries : DEFAULT_RESEARCH_CONFIG.countries,
       regionsByCountry: normalized.regionsByCountry.length ? normalized.regionsByCountry : DEFAULT_RESEARCH_CONFIG.regionsByCountry,
@@ -464,10 +441,6 @@ export async function saveResearchConfig(input: unknown): Promise<ResearchConfig
       normalized.claudeCachingUserPrompt || DEFAULT_RESEARCH_CONFIG.claudeCachingUserPrompt,
     claudeCachingTtl: normalized.claudeCachingTtl || DEFAULT_RESEARCH_CONFIG.claudeCachingTtl,
     similarCustomersPrompt: normalized.similarCustomersPrompt || DEFAULT_RESEARCH_CONFIG.similarCustomersPrompt,
-    followupCustomerClickPrompt:
-      normalized.followupCustomerClickPrompt || DEFAULT_RESEARCH_CONFIG.followupCustomerClickPrompt,
-    quickSimilarExtraInstructions:
-      normalized.quickSimilarExtraInstructions || DEFAULT_RESEARCH_CONFIG.quickSimilarExtraInstructions,
     industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
     countries: normalized.countries.length ? normalized.countries : DEFAULT_RESEARCH_CONFIG.countries,
     regionsByCountry: normalized.regionsByCountry.length ? normalized.regionsByCountry : DEFAULT_RESEARCH_CONFIG.regionsByCountry,

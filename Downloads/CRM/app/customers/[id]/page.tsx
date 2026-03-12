@@ -292,6 +292,7 @@ type ResearchHistoryRow = {
   model: string | null;
   summary: string;
   commercialRelevance: string;
+  segmentChannelProfile: string[];
   fitScore: number | null;
   assortmentFitScore: number | null;
   potentialScore: number | null;
@@ -302,6 +303,13 @@ type ResearchHistoryRow = {
   year1High: string;
   year1Currency: string;
   categories: Array<{ categoryOrBrand: string; whyItFits: string; opportunityLevel: string }>;
+  scoreDrivers: string[];
+  assumptions: string[];
+  contactPaths: {
+    namedContacts: Array<{ name: string; role: string; sourceNote: string; confidence: string }>;
+    roleBasedPaths: Array<{ function: string; entryPath: string; confidence: string }>;
+    fallbackPath: string;
+  } | null;
   nextBestActions: string[];
   rawOutput: string;
   normalized: NormalizedProfileResearch | null;
@@ -834,6 +842,12 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         : null;
       const categories = Array.isArray(row.categoriesToPitch) ? row.categoriesToPitch : [];
       const nextBestActions = Array.isArray(row.nextBestActions) ? row.nextBestActions : [];
+      const scoreDrivers = Array.isArray(row.scoreDrivers) ? row.scoreDrivers : [];
+      const assumptions = Array.isArray(row.assumptions) ? row.assumptions : [];
+      const segmentChannelProfile = Array.isArray(row.segmentChannelProfile) ? row.segmentChannelProfile : [];
+      const contactPathsRaw = row.contactPaths && typeof row.contactPaths === "object"
+        ? (row.contactPaths as Record<string, unknown>)
+        : null;
       const sourceAttributionRaw = row.sourceAttribution && typeof row.sourceAttribution === "object"
         ? (row.sourceAttribution as Record<string, unknown>)
         : null;
@@ -879,6 +893,39 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             opportunityLevel: typeof item.opportunityLevel === "string" ? item.opportunityLevel : ""
           }))
           .filter((item) => item.categoryOrBrand),
+        segmentChannelProfile: segmentChannelProfile
+          .map((item) => (typeof item === "string" ? item : ""))
+          .filter(Boolean),
+        scoreDrivers: scoreDrivers
+          .map((item) => (typeof item === "string" ? item : ""))
+          .filter(Boolean),
+        assumptions: assumptions
+          .map((item) => (typeof item === "string" ? item : ""))
+          .filter(Boolean),
+        contactPaths: contactPathsRaw
+          ? {
+              namedContacts: (Array.isArray(contactPathsRaw.namedContacts) ? contactPathsRaw.namedContacts : [])
+                .map((c) => (c && typeof c === "object" ? (c as Record<string, unknown>) : null))
+                .filter((c): c is Record<string, unknown> => Boolean(c))
+                .map((c) => ({
+                  name: typeof c.name === "string" ? c.name : "",
+                  role: typeof c.role === "string" ? c.role : "",
+                  sourceNote: typeof c.sourceNote === "string" ? c.sourceNote : "",
+                  confidence: typeof c.confidence === "string" ? c.confidence : "Low"
+                }))
+                .filter((c) => c.name || c.role),
+              roleBasedPaths: (Array.isArray(contactPathsRaw.roleBasedPaths) ? contactPathsRaw.roleBasedPaths : [])
+                .map((p) => (p && typeof p === "object" ? (p as Record<string, unknown>) : null))
+                .filter((p): p is Record<string, unknown> => Boolean(p))
+                .map((p) => ({
+                  function: typeof p.function === "string" ? p.function : "",
+                  entryPath: typeof p.entryPath === "string" ? p.entryPath : "",
+                  confidence: typeof p.confidence === "string" ? p.confidence : "Low"
+                }))
+                .filter((p) => p.function || p.entryPath),
+              fallbackPath: typeof contactPathsRaw.fallbackPath === "string" ? contactPathsRaw.fallbackPath : ""
+            }
+          : null,
         nextBestActions: nextBestActions
           .map((item) => (typeof item === "string" ? item : ""))
           .filter(Boolean),
@@ -1972,139 +2019,63 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 {entry.commercialRelevance ? (
                   <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>{entry.commercialRelevance}</p>
                 ) : null}
-                {entry.normalized ? (
-                  <div className="crm-list" style={{ marginTop: "0.6rem" }}>
-                    {Object.keys(entry.normalized.accountSummary).length > 0 ? (
-                      <article className="crm-item">
-                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Kontoöversikt (från JSON)" : "Account summary (from JSON)"}</h4>
-                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          <strong>{lang === "sv" ? "Legal name" : "Legal name"}:</strong> {asText(entry.normalized.accountSummary.legal_name) || "-"}
-                        </p>
-                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          <strong>{lang === "sv" ? "Webbplats" : "Website"}:</strong>{" "}
-                          {asText(entry.normalized.accountSummary.website) ? (
-                            <a href={asText(entry.normalized.accountSummary.website)} target="_blank" rel="noreferrer" className="crm-link-inline">
-                              {asText(entry.normalized.accountSummary.website)}
-                            </a>
-                          ) : (
-                            "-"
-                          )}
-                        </p>
-                        <p style={{ marginTop: "0.35rem" }}>
-                          <strong>{lang === "sv" ? "Summary" : "Summary"}:</strong> {asText(entry.normalized.accountSummary.summary) || entry.summary || "-"}
-                        </p>
-                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          <strong>{lang === "sv" ? "Commercial relevance" : "Commercial relevance"}:</strong>{" "}
-                          {asText(entry.normalized.accountSummary.commercial_relevance_for_vendora) || entry.commercialRelevance || "-"}
-                        </p>
-                        {asTextArray(entry.normalized.accountSummary.segment_channel_profile).length > 0 ? (
-                          <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                            {asTextArray(entry.normalized.accountSummary.segment_channel_profile).slice(0, 12).map((row, index) => (
-                              <li key={`${entry.id}-profile-${index}`}>{row}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </article>
+                {entry.segmentChannelProfile.length > 0 ? (
+                  <ul style={{ marginTop: "0.4rem", paddingLeft: "1.1rem" }}>
+                    {entry.segmentChannelProfile.slice(0, 8).map((line, index) => (
+                      <li key={`${entry.id}-seg-${index}`} className="crm-subtle">{line}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {entry.scoreDrivers.length > 0 ? (
+                  <>
+                    <h4 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Scoredrivare" : "Score drivers"}</h4>
+                    <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                      {entry.scoreDrivers.slice(0, 8).map((driver, index) => (
+                        <li key={`${entry.id}-driver-${index}`}>{driver}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+                {entry.contactPaths && (entry.contactPaths.namedContacts.length > 0 || entry.contactPaths.roleBasedPaths.length > 0) ? (
+                  <>
+                    <h4 style={{ marginTop: "0.55rem", marginBottom: 0 }}>{lang === "sv" ? "Kontaktvägar" : "Contact paths"}</h4>
+                    {entry.contactPaths.namedContacts.length > 0 ? (
+                      <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                        {entry.contactPaths.namedContacts.slice(0, 5).map((contact, index) => (
+                          <li key={`${entry.id}-contact-${index}`}>
+                            <strong>{contact.name || "-"}</strong>
+                            {contact.role ? ` · ${contact.role}` : ""}
+                            {contact.confidence ? ` · ${contact.confidence}` : ""}
+                          </li>
+                        ))}
+                      </ul>
                     ) : null}
-
-                    {Object.keys(entry.normalized.scorecard).length > 0 ? (
-                      <article className="crm-item">
-                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Fit scorecard (från JSON)" : "Fit scorecard (from JSON)"}</h4>
-                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          Fit: {asScalarText(entry.normalized.scorecard.fit_score) || String(entry.fitScore ?? "-")} ·{" "}
-                          {lang === "sv" ? "Sortimentsfit" : "Assortment fit"}:{" "}
-                          {asScalarText(entry.normalized.scorecard.assortment_fit_score) || asScalarText(entry.normalized.scorecard.fit_score) || String(entry.assortmentFitScore ?? "-")} ·{" "}
-                          {lang === "sv" ? "Potential" : "Potential"}: {asScalarText(entry.normalized.scorecard.potential_score) || String(entry.potentialScore ?? "-")} · Total:{" "}
-                          {asScalarText(entry.normalized.scorecard.total_score) || String(entry.totalScore ?? "-")}
-                        </p>
-                        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                          Y1: {asText(asJsonMap(entry.normalized.scorecard.year_1_purchase_potential)?.low) || entry.year1Low || "-"} /{" "}
-                          {asText(asJsonMap(entry.normalized.scorecard.year_1_purchase_potential)?.base) || entry.year1Base || "-"} /{" "}
-                          {asText(asJsonMap(entry.normalized.scorecard.year_1_purchase_potential)?.high) || entry.year1High || "-"}{" "}
-                          {asText(asJsonMap(entry.normalized.scorecard.year_1_purchase_potential)?.currency) || entry.year1Currency || ""}
-                        </p>
-                        {asTextArray(entry.normalized.scorecard.score_drivers).length > 0 ? (
-                          <>
-                            <h5 style={{ marginTop: "0.45rem", marginBottom: 0 }}>{lang === "sv" ? "Scoredrivare" : "Score drivers"}</h5>
-                            <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                              {asTextArray(entry.normalized.scorecard.score_drivers).slice(0, 10).map((row, index) => (
-                                <li key={`${entry.id}-driver-${index}`}>{row}</li>
-                              ))}
-                            </ul>
-                          </>
-                        ) : null}
-                      </article>
+                    {entry.contactPaths.roleBasedPaths.length > 0 ? (
+                      <ul style={{ marginTop: "0.3rem", paddingLeft: "1.1rem" }}>
+                        {entry.contactPaths.roleBasedPaths.slice(0, 6).map((path, index) => (
+                          <li key={`${entry.id}-path-${index}`}>
+                            <strong>{path.function || "-"}</strong>
+                            {path.entryPath ? ` · ${path.entryPath}` : ""}
+                          </li>
+                        ))}
+                      </ul>
                     ) : null}
-
-                    {entry.normalized.categories.length > 0 ? (
-                      <article className="crm-item">
-                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Prioriterade kategorier (från JSON)" : "Priority categories (from JSON)"}</h4>
-                        <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                          {entry.normalized.categories.slice(0, 12).map((category, index) => (
-                            <li key={`${entry.id}-json-cat-${index}`}>
-                              <strong>{asText(category.category_or_brand) || "-"}</strong>
-                              {asText(category.why_it_fits) ? ` - ${asText(category.why_it_fits)}` : ""}
-                              {asText(category.opportunity_level) ? ` | ${asText(category.opportunity_level)}` : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      </article>
+                    {entry.contactPaths.fallbackPath ? (
+                      <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>{entry.contactPaths.fallbackPath}</p>
                     ) : null}
-
-                    {Object.keys(entry.normalized.contactPaths).length > 0 ? (
-                      <article className="crm-item">
-                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Kontaktvägar (från JSON)" : "Contact paths (from JSON)"}</h4>
-                        {asJsonArray(entry.normalized.contactPaths.role_based_paths).length > 0 ? (
-                          <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                            {asJsonArray(entry.normalized.contactPaths.role_based_paths)
-                              .map((row) => asJsonMap(row))
-                              .filter((row): row is JsonMap => Boolean(row))
-                              .slice(0, 8)
-                              .map((row, index) => (
-                                <li key={`${entry.id}-json-path-${index}`}>
-                                  <strong>{asText(row.function) || "-"}</strong>
-                                  {asText(row.why_relevant) ? ` - ${asText(row.why_relevant)}` : ""}
-                                  {asText(row.likely_entry_path) ? ` | ${asText(row.likely_entry_path)}` : ""}
-                                  {asText(row.contact_method) ? ` | ${asText(row.contact_method)}` : ""}
-                                </li>
-                              ))}
-                          </ul>
-                        ) : null}
-                      </article>
-                    ) : null}
-
-                    {entry.normalized.nextBestActions.length > 0 ? (
-                      <article className="crm-item">
-                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Nästa steg (från JSON)" : "Next best actions (from JSON)"}</h4>
-                        <ol style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                          {entry.normalized.nextBestActions.slice(0, 12).map((action, index) => (
-                            <li key={`${entry.id}-json-step-${index}`}>{action}</li>
-                          ))}
-                        </ol>
-                      </article>
-                    ) : null}
-
-                    {entry.normalized.evidenceLog.length > 0 ? (
-                      <article className="crm-item">
-                        <h4 style={{ margin: 0 }}>{lang === "sv" ? "Källor (evidence log)" : "Sources (evidence log)"}</h4>
-                        <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-                          {entry.normalized.evidenceLog.slice(0, 20).map((item, index) => (
-                            <li key={`${entry.id}-evidence-${index}`}>
-                              {asText(item.source_url) ? (
-                                <a href={asText(item.source_url)} target="_blank" rel="noreferrer" className="crm-link-inline">
-                                  {asText(item.source_url)}
-                                </a>
-                              ) : (
-                                <span>-</span>
-                              )}{" "}
-                              · {asText(item.source_type) || "other"}
-                              {asText(item.evidence_snippet) ? ` · ${asText(item.evidence_snippet)}` : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      </article>
-                    ) : null}
-                  </div>
+                  </>
+                ) : null}
+                {entry.assumptions.length > 0 ? (
+                  <details style={{ marginTop: "0.5rem" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                      {lang === "sv" ? "Antaganden" : "Assumptions"} ({entry.assumptions.length})
+                    </summary>
+                    <ul style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+                      {entry.assumptions.slice(0, 8).map((assumption, index) => (
+                        <li key={`${entry.id}-assumption-${index}`}>{assumption}</li>
+                      ))}
+                    </ul>
+                  </details>
                 ) : null}
                 <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
                   Fit: {entry.fitScore ?? "-"} · {lang === "sv" ? "Sortimentsfit" : "Assortment fit"}: {entry.assortmentFitScore ?? "-"} ·{" "}
