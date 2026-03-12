@@ -328,14 +328,13 @@ type ResearchConfig = {
   claudeCachingUserPrompt: string;
   claudeCachingTtl: "5m" | "1h";
   similarCustomersPrompt: string;
-  followupCustomerClickPrompt: string;
-  quickSimilarExtraInstructions: string;
   extraInstructions: string;
   defaultScope: "region" | "country";
   industries: string[];
   countries: string[];
   regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
+  brands: string[];
   sellerAssignments: Array<{ seller: string; emails: string[] }>;
   requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
   remindersEnabled: boolean;
@@ -465,10 +464,6 @@ const EMPTY_CONFIG: ResearchConfig = {
   claudeCachingTtl: "1h",
   similarCustomersPrompt:
     "Find up to 8 similar reseller customers based on this selected account. Use country/region scope first and fall back to country when needed. Prefer public company registers/directories and include confidence + source signals.",
-  followupCustomerClickPrompt:
-    "Deep-research this selected similar company for Vendora fit and commercial potential. Quantify likely Year-1 potential range, highlight top product families to pitch, and provide concrete next steps.",
-  quickSimilarExtraInstructions:
-    "Keep the response short. Focus on similar profile in segment, geography and category focus.",
   extraInstructions: "",
   defaultScope: "region",
   industries: [
@@ -504,6 +499,7 @@ const EMPTY_CONFIG: ResearchConfig = {
     { country: "LT", regions: ["Vilnius", "Kaunas", "Klaipeda", "Siauliai", "Panevezys", "Alytus", "Marijampole", "Utena", "Taurage", "Telsiai"] }
   ],
   sellers: ["Team Nordics"],
+  brands: [],
   sellerAssignments: [],
   requiredCustomerFields: ["name", "industry", "country", "seller"],
   remindersEnabled: true,
@@ -782,12 +778,11 @@ function ResearchAdminContent() {
       const current = researchBasePromptDraft.trim();
       const full = config.fullResearchPrompt.trim();
       if (!current || current === full) {
-        setResearchBasePromptDraft(config.followupCustomerClickPrompt || config.fullResearchPrompt);
+        setResearchBasePromptDraft(config.fullResearchPrompt);
       }
     } else if (modeParam === "similar") {
       const current = researchBasePromptDraft.trim();
-      const followup = config.followupCustomerClickPrompt.trim();
-      if (!current || current === followup) {
+      if (!current || current === config.fullResearchPrompt.trim()) {
         setResearchBasePromptDraft(config.similarCustomersPrompt || config.fullResearchPrompt);
       }
     }
@@ -795,7 +790,6 @@ function ResearchAdminContent() {
     adminMode,
     searchParams,
     config.defaultScope,
-    config.followupCustomerClickPrompt,
     config.fullResearchPrompt,
     config.similarCustomersPrompt,
     researchBasePromptDraft
@@ -967,8 +961,6 @@ function ResearchAdminContent() {
       claudeCachingUserPrompt: String(form.get("claudeCachingUserPrompt") ?? "").trim(),
       claudeCachingTtl: String(form.get("claudeCachingTtl") ?? "1h") === "5m" ? "5m" : "1h",
       similarCustomersPrompt: String(form.get("similarCustomersPrompt") ?? "").trim(),
-      followupCustomerClickPrompt: String(form.get("followupCustomerClickPrompt") ?? "").trim(),
-      quickSimilarExtraInstructions: String(form.get("quickSimilarExtraInstructions") ?? "").trim(),
       extraInstructions: String(form.get("extraInstructions") ?? "").trim(),
       defaultScope: String(form.get("defaultScope") ?? "region") === "country" ? "country" : "region",
       industries: String(form.get("industries") ?? "")
@@ -981,6 +973,10 @@ function ResearchAdminContent() {
         .filter(Boolean),
       regionsByCountry: parseRegionsByCountry(String(form.get("regionsByCountry") ?? "")),
       sellers: String(form.get("sellers") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+      brands: String(form.get("brands") ?? "")
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
@@ -2386,6 +2382,14 @@ function ResearchAdminContent() {
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <textarea
                   className="crm-textarea"
+                  name="brands"
+                  defaultValue={config.brands.join("\n")}
+                  placeholder={lang === "sv" ? "Varumärken, ett per rad" : "Brands, one per line"}
+                />
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
                   name="sellerAssignments"
                   defaultValue={formatSellerAssignments(config.sellerAssignments)}
                   placeholder={
@@ -2613,32 +2617,6 @@ function ResearchAdminContent() {
                   <option value="1h">1h</option>
                   <option value="5m">5m</option>
                 </select>
-              </div>
-              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
-                  {lang === "sv" ? "Follow-up on customer click prompt" : "Follow-up on customer click prompt"}
-                </p>
-                <textarea
-                  className="crm-textarea"
-                  name="followupCustomerClickPrompt"
-                  defaultValue={config.followupCustomerClickPrompt}
-                  placeholder={
-                    lang === "sv"
-                      ? "Fördjupningsprompt när du klickar en kund i resultatlistan"
-                      : "Follow-up prompt when clicking a customer in the result list"
-                  }
-                />
-              </div>
-              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-                <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>
-                  {lang === "sv" ? "Extra instruktioner: snabb liknande-kundersökning" : "Extra instructions: quick similar search"}
-                </p>
-                <textarea
-                  className="crm-textarea"
-                  name="quickSimilarExtraInstructions"
-                  defaultValue={config.quickSimilarExtraInstructions}
-                  placeholder={lang === "sv" ? "Extra instruktioner för snabb liknande-kunder AI" : "Extra instructions for quick similar-customers AI"}
-                />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <p className="crm-subtle" style={{ marginBottom: "0.35rem" }}>

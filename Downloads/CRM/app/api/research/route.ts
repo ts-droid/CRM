@@ -449,17 +449,39 @@ function parseStructuredResearchInsight(outputText: string): StructuredResearchI
   const root = asObject(parsed);
   if (!root) return null;
 
-  const summaryObj = asObject(root.target_account_summary) ?? asObject(root.account_summary) ?? {};
-  const scoreObj = asObject(root.vendora_match_scorecard) ?? asObject(root.vendora_fit_scorecard) ?? {};
+  // Support both flat format (expected) and account_intelligence wrapper (Claude V2.2 fallback)
+  const aiWrapper = asObject(root.account_intelligence);
+  const flatRoot = aiWrapper ? aiWrapper : root;
+
+  const summaryObj =
+    asObject(flatRoot.target_account_summary) ??
+    asObject(flatRoot.account_summary) ??
+    asObject(aiWrapper?.company_profile) ??
+    {};
+  const aiCommercialAnalysis = asObject(aiWrapper?.commercial_analysis);
+  const scoreObj =
+    asObject(flatRoot.vendora_match_scorecard) ??
+    asObject(flatRoot.vendora_fit_scorecard) ??
+    asObject(aiWrapper?.vendora_fit_scorecard) ??
+    asObject(aiCommercialAnalysis?.scorecard) ??
+    {};
   const yearObj = asObject(scoreObj.year_1_purchase_potential) ?? {};
 
-  const categoriesRows = asArray(root.best_categories_to_pitch).length
-    ? asArray(root.best_categories_to_pitch)
-    : asArray(root.recommended_categories_to_pitch);
-  const namedContactsRows = asArray(asObject(root.contact_paths)?.named_contacts);
-  const rolePathsRows = asArray(asObject(root.contact_paths)?.role_based_paths);
+  const categoriesRows = asArray(flatRoot.best_categories_to_pitch).length
+    ? asArray(flatRoot.best_categories_to_pitch)
+    : asArray(flatRoot.recommended_categories_to_pitch).length
+    ? asArray(flatRoot.recommended_categories_to_pitch)
+    : asArray(aiWrapper?.recommended_categories_to_pitch).length
+    ? asArray(aiWrapper?.recommended_categories_to_pitch)
+    : asArray(aiWrapper?.best_categories_to_pitch);
+  const namedContactsRows = asArray(asObject(flatRoot.contact_paths)?.named_contacts);
+  const rolePathsRows = asArray(asObject(flatRoot.contact_paths)?.role_based_paths);
 
-  const summary = asString(summaryObj.summary);
+  // For account_intelligence company_profile, derive summary from legal_name + website
+  const aiSummaryFallback = aiWrapper
+    ? [asString(summaryObj.legal_name), asString(summaryObj.website)].filter(Boolean).join(" · ")
+    : "";
+  const summary = asString(summaryObj.summary) || aiSummaryFallback;
   const segmentChannelProfile = asStringArray(summaryObj.segment_channel_profile);
   const commercialRelevance = asString(summaryObj.commercial_relevance_for_vendora);
   const fitScore = Number.isFinite(Number(scoreObj.fit_score)) ? clampScore(scoreObj.fit_score, 0) : null;
@@ -520,17 +542,24 @@ function parseStructuredResearchInsight(outputText: string): StructuredResearchI
     },
     scoreDrivers: asStringArray(scoreObj.score_drivers),
     assumptions: asStringArray(scoreObj.assumptions),
-    nextBestActions: asStringArray(root.next_best_actions),
+    nextBestActions: asStringArray(flatRoot.next_best_actions).length
+      ? asStringArray(flatRoot.next_best_actions)
+      : asStringArray(aiWrapper?.next_best_actions),
     raw: root
   };
 
-  if (
-    !insight.summary &&
-    !insight.commercialRelevance &&
-    !insight.categoriesToPitch.length &&
-    !insight.nextBestActions.length &&
-    insight.totalScore === null
-  ) {
+  // For account_intelligence format, lower the bar – company profile alone is useful
+  const hasMinimumContent = aiWrapper
+    ? Boolean(insight.summary)
+    : !insight.summary &&
+      !insight.commercialRelevance &&
+      !insight.categoriesToPitch.length &&
+      !insight.nextBestActions.length &&
+      insight.totalScore === null;
+  if (!aiWrapper && hasMinimumContent) {
+    return null;
+  }
+  if (aiWrapper && !insight.summary) {
     return null;
   }
 
@@ -564,11 +593,23 @@ function inferIndustryFromSegments(segments: string[]): string {
 }
 
 function extractResearchAutofill(raw: Record<string, unknown>): ResearchAutofill {
-  const accountSummary = asObject(raw.account_summary) ?? asObject(raw.target_account_summary) ?? {};
+  const aiWrapper = asObject(raw.account_intelligence);
+  const flatRoot = aiWrapper ?? raw;
+  const accountSummary =
+    asObject(flatRoot.account_summary) ??
+    asObject(flatRoot.target_account_summary) ??
+    asObject(aiWrapper?.company_profile) ??
+    {};
   const segments = asStringArray(accountSummary.segment_channel_profile);
   const website = asString(accountSummary.website);
   const legalName = asString(accountSummary.legal_name);
-  const headquarters = asString(accountSummary.headquarters);
+  const hqRaw = accountSummary.headquarters;
+  const headquarters =
+    typeof hqRaw === "string"
+      ? hqRaw
+      : asObject(hqRaw)
+      ? [asString((hqRaw as Record<string, unknown>).city), asString((hqRaw as Record<string, unknown>).region)].filter(Boolean).join(", ")
+      : "";
   const inferredIndustry = inferIndustryFromSegments(segments);
 
   return {
@@ -583,12 +624,26 @@ function hasRequiredDeepProfileShape(outputText: string): boolean {
   const parsed = extractJsonValue(outputText);
   const root = asObject(parsed);
   if (!root) return false;
-  const accountSummary = asObject(root.account_summary) ?? asObject(root.target_account_summary);
-  const scorecard = asObject(root.vendora_fit_scorecard) ?? asObject(root.vendora_match_scorecard);
-  const categories = asArray(root.recommended_categories_to_pitch).length
-    ? asArray(root.recommended_categories_to_pitch)
-    : asArray(root.best_categories_to_pitch);
-  const nextBestActions = asArray(root.next_best_actions);
+  const aiWrapper = asObject(root.account_intelligence);
+  const flatRoot = aiWrapper ?? root;
+  const accountSummary =
+    asObject(flatRoot.account_summary) ??
+    asObject(flatRoot.target_account_summary) ??
+    asObject(aiWrapper?.company_profile);
+  const scorecard =
+    asObject(flatRoot.vendora_fit_scorecard) ??
+    asObject(flatRoot.vendora_match_scorecard) ??
+    asObject(aiWrapper?.vendora_fit_scorecard);
+  const categories = asArray(flatRoot.recommended_categories_to_pitch).length
+    ? asArray(flatRoot.recommended_categories_to_pitch)
+    : asArray(flatRoot.best_categories_to_pitch).length
+    ? asArray(flatRoot.best_categories_to_pitch)
+    : asArray(aiWrapper?.recommended_categories_to_pitch);
+  const nextBestActions = asArray(flatRoot.next_best_actions).length
+    ? asArray(flatRoot.next_best_actions)
+    : asArray(aiWrapper?.next_best_actions);
+  // account_intelligence format: accept if company_profile exists (scorecard may be absent)
+  if (aiWrapper) return Boolean(accountSummary);
   return Boolean(accountSummary) && Boolean(scorecard) && categories.length > 0 && nextBestActions.length > 0;
 }
 
@@ -1375,7 +1430,12 @@ function buildClaudeUserPrompt(
   }
 
   if (out === template) {
-    out = `${template}\n\nINPUT JSON\n${inputJson}`;
+    // No placeholders at all – append both task and input
+    out = `${template}\n\n${taskPrompt}\n\nINPUT JSON\n${inputJson}`;
+  } else if (!template.includes("{{TASK_PROMPT}}")) {
+    // INPUT_JSON was replaced but task prompt (with JSON shape spec) was not in template –
+    // prepend it so the model always receives the output schema instruction
+    out = `${taskPrompt}\n\n${out}`;
   }
 
   return out;
@@ -1969,7 +2029,7 @@ export async function POST(req: Request) {
           .filter(Boolean)
           .join("\n\n");
         const taskBasePrompt =
-          body.basePrompt?.trim() || settings.fullResearchPrompt || settings.followupCustomerClickPrompt;
+          body.basePrompt?.trim() || settings.fullResearchPrompt;
         const deepProfileGuard = [
           "OUTPUT DEPTH REQUIREMENTS (MANDATORY):",
           "- Return ONLY valid JSON.",
@@ -2287,7 +2347,8 @@ export async function POST(req: Request) {
         });
       }
 
-      const mergedExtraInstructions = [settings.quickSimilarExtraInstructions, settings.extraInstructions, body.extraInstructions]
+      const quickSimilarBaseInstructions = "Keep the response focused. Prioritize similar segment, geography and category profile.";
+      const mergedExtraInstructions = [quickSimilarBaseInstructions, settings.extraInstructions, body.extraInstructions]
         .map((value) => String(value ?? "").trim())
         .filter(Boolean)
         .join("\n\n");

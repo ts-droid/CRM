@@ -70,7 +70,30 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       phone?: string;
       notes?: string;
       potentialScore?: number;
+      manualBrandRevenue?: Array<{ brand: string; revenue: number; currency: string; year: number }>;
     };
+
+    // Merge manualBrandRevenue into existing webshopSignals to preserve research data
+    let webshopSignalsUpdate: Record<string, unknown> | undefined;
+    if (Array.isArray(body.manualBrandRevenue)) {
+      const existing = await prisma.customer.findUnique({
+        where: { id: params.id },
+        select: { webshopSignals: true }
+      });
+      const currentSignals =
+        existing?.webshopSignals && typeof existing.webshopSignals === "object"
+          ? (existing.webshopSignals as Record<string, unknown>)
+          : {};
+      const validated = body.manualBrandRevenue
+        .filter((row) => typeof row.brand === "string" && row.brand.trim() && Number.isFinite(row.revenue) && row.revenue >= 0)
+        .map((row) => ({
+          brand: row.brand.trim(),
+          revenue: row.revenue,
+          currency: (typeof row.currency === "string" ? row.currency.trim().toUpperCase() : "") || "SEK",
+          year: Number.isFinite(row.year) ? Math.round(row.year) : new Date().getUTCFullYear()
+        }));
+      webshopSignalsUpdate = { ...currentSignals, manualBrandRevenue: validated };
+    }
 
     const updated = await prisma.customer.update({
       where: { id: params.id },
@@ -88,7 +111,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         potentialScore:
           typeof body.potentialScore === "number"
             ? Math.max(0, Math.min(100, Math.round(body.potentialScore)))
-            : undefined
+            : undefined,
+        ...(webshopSignalsUpdate ? { webshopSignals: webshopSignalsUpdate as Parameters<typeof prisma.customer.update>[0]["data"]["webshopSignals"] } : {})
       }
     });
 
