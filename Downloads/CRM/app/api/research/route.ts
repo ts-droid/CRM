@@ -737,6 +737,12 @@ async function saveResearchInsightToCustomer(
   };
 
   const autofill = extractResearchAutofill(insight.raw);
+  (nextSignals as Record<string, unknown>).extractedAutofill = {
+    organization: autofill.organization || null,
+    industry: autofill.industry || null,
+    region: autofill.region || null,
+    website: autofill.website || null
+  };
   const applyOrganization = !asString(existing.organization) && asString(autofill.organization);
   const applyIndustry = !asString(existing.industry) && asString(autofill.industry);
   const applyRegion = !asString(existing.region) && asString(autofill.region);
