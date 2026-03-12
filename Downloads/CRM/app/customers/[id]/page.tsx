@@ -1210,10 +1210,37 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   }
 
   function removeManualBrandRevenueRow(key: string) {
+    const confirmed = window.confirm(
+      lang === "sv" ? "Ta bort den här raden?" : "Remove this row?"
+    );
+    if (!confirmed) return;
     setManualBrandRevenueRows((prev) => {
       const next = prev.filter((row) => row.key !== key);
       return next.length > 0 ? next : [emptyManualBrandRevenueRow()];
     });
+  }
+
+  async function saveBrandRows() {
+    const manualBrandRevenue = manualBrandRevenueRows
+      .map((row) => ({
+        brand: row.brand.trim(),
+        revenue: Number(row.revenue),
+        currency: row.currency.trim().toUpperCase() || "SEK",
+        year: Number(row.year)
+      }))
+      .filter((row) => row.brand && Number.isFinite(row.revenue) && row.revenue >= 0);
+
+    const res = await fetch(`/api/customers/${params.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ manualBrandRevenue })
+    });
+    if (!res.ok) {
+      setStatus(lang === "sv" ? "Kunde inte spara" : "Could not save");
+      return;
+    }
+    setStatus(lang === "sv" ? "Sparat" : "Saved");
+    await loadCustomer();
   }
 
   async function onSave(event: FormEvent<HTMLFormElement>) {
@@ -1779,6 +1806,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                             placeholder={lang === "sv" ? "År" : "Year"}
                             onChange={(event) => updateManualBrandRevenueRow(row.key, { year: event.target.value })}
                           />
+                          <button
+                            type="button"
+                            className="crm-button"
+                            style={{ padding: "0.25rem 0.5rem" }}
+                            onClick={saveBrandRows}
+                          >
+                            {lang === "sv" ? "Spara" : "Save"}
+                          </button>
                           <button
                             type="button"
                             className="crm-button crm-button-secondary"
