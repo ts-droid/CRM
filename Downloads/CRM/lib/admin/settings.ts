@@ -32,6 +32,7 @@ export type ResearchConfig = {
   claudeCachingTtl: "5m" | "1h";
   similarCustomersPrompt: string;
   extraInstructions: string;
+  brands: string[];
   defaultScope: "region" | "country";
   industries: string[];
   countries: string[];
@@ -186,6 +187,7 @@ export const DEFAULT_RESEARCH_CONFIG: ResearchConfig = {
     "- PotentialScore (0-100)\n" +
     "- TotalScore (0-100) = 0.55 * FitScore + 0.45 * PotentialScore",
   extraInstructions: "",
+  brands: [],
   defaultScope: "region",
   industries: [
     "Consumer Electronics",
@@ -363,6 +365,7 @@ export function normalizeResearchConfig(input: unknown): ResearchConfig {
       value.similarCustomersPrompt ?? value.quickSimilarQuestionPrompt ?? value.quickSimilarBasePrompt ?? ""
     ).trim(),
     extraInstructions: String(value.extraInstructions ?? "").trim(),
+    brands: uniqueTrimmed(value.brands, 200),
     defaultScope,
     industries: uniqueTrimmed(value.industries, 50),
     countries: mergeCountriesWithDefaults(uniqueTrimmed(value.countries, 50)),
@@ -413,7 +416,8 @@ export async function getResearchConfig(): Promise<ResearchConfig> {
       industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
       countries: normalized.countries.length ? normalized.countries : DEFAULT_RESEARCH_CONFIG.countries,
       regionsByCountry: normalized.regionsByCountry.length ? normalized.regionsByCountry : DEFAULT_RESEARCH_CONFIG.regionsByCountry,
-      sellers: normalized.sellers.length ? normalized.sellers : DEFAULT_RESEARCH_CONFIG.sellers
+      sellers: normalized.sellers.length ? normalized.sellers : DEFAULT_RESEARCH_CONFIG.sellers,
+      brands: normalized.brands
     };
   } catch {
     return DEFAULT_RESEARCH_CONFIG;
@@ -444,7 +448,8 @@ export async function saveResearchConfig(input: unknown): Promise<ResearchConfig
     industries: normalized.industries.length ? normalized.industries : DEFAULT_RESEARCH_CONFIG.industries,
     countries: normalized.countries.length ? normalized.countries : DEFAULT_RESEARCH_CONFIG.countries,
     regionsByCountry: normalized.regionsByCountry.length ? normalized.regionsByCountry : DEFAULT_RESEARCH_CONFIG.regionsByCountry,
-    sellers: normalized.sellers.length ? normalized.sellers : DEFAULT_RESEARCH_CONFIG.sellers
+    sellers: normalized.sellers.length ? normalized.sellers : DEFAULT_RESEARCH_CONFIG.sellers,
+    brands: normalized.brands
   };
 
   await prisma.appSetting.upsert({

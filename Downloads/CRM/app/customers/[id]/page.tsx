@@ -123,6 +123,7 @@ type FormConfig = {
   countries: string[];
   regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
+  brands: string[];
   globalSystemPrompt: string;
   fullResearchPrompt: string;
   similarCustomersPrompt: string;
@@ -169,8 +170,8 @@ const DEFAULT_FORM_CONFIG: FormConfig = {
     { country: "LV", regions: ["Riga", "Pieriga", "Kurzeme", "Zemgale", "Vidzeme", "Latgale"] },
     { country: "LT", regions: ["Vilnius", "Kaunas", "Klaipeda", "Siauliai", "Panevezys", "Alytus", "Marijampole", "Utena", "Taurage", "Telsiai"] }
   ],
-  sellers: ["Team Nordics"]
-  ,
+  sellers: ["Team Nordics"],
+  brands: [],
   globalSystemPrompt:
     "You are an account intelligence and channel sales analyst for Vendora Nordic.",
   fullResearchPrompt:
@@ -688,6 +689,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               ? data.config.regionsByCountry
               : DEFAULT_FORM_CONFIG.regionsByCountry,
             sellers: Array.isArray(data.config.sellers) ? data.config.sellers : DEFAULT_FORM_CONFIG.sellers,
+            brands: Array.isArray(data.config.brands) ? data.config.brands : DEFAULT_FORM_CONFIG.brands,
             globalSystemPrompt:
               typeof (data.config as { globalSystemPrompt?: string }).globalSystemPrompt === "string"
                 ? String((data.config as { globalSystemPrompt?: string }).globalSystemPrompt)
@@ -1244,6 +1246,23 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
     setStatus(lang === "sv" ? "Sparat" : "Saved");
     await loadCustomer();
+
+    // Merge any new brands into admin settings so they appear in the dropdown next time
+    const newBrands = manualBrandRevenue.map((r) => r.brand).filter((b) => b && !formConfig.brands.includes(b));
+    if (newBrands.length > 0) {
+      fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brands: newBrands })
+      })
+        .then((r) => r.json())
+        .then((data: { config?: { brands?: string[] } }) => {
+          if (data.config?.brands) {
+            setFormConfig((prev) => ({ ...prev, brands: data.config!.brands! }));
+          }
+        })
+        .catch(() => {/* non-critical */});
+    }
   }
 
   async function runSimilarSearch() {
@@ -1621,6 +1640,15 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
               {lang === "sv" ? "Kontakter" : "Contacts"}: {customer.contacts.length} · {lang === "sv" ? "Planer" : "Plans"}: {customer.plans.length}
             </p>
+            {Array.isArray(customer.webshopSignals?.manualBrandRevenue) && customer.webshopSignals.manualBrandRevenue.length > 0 && (
+              <p className="crm-subtle" style={{ marginTop: "0.3rem" }}>
+                {lang === "sv" ? "Varumärken med omsättning" : "Brands with revenue"}:{" "}
+                {(customer.webshopSignals.manualBrandRevenue as Array<{ brand?: string; revenue?: number; currency?: string; year?: number }>)
+                  .filter((r) => r.brand)
+                  .map((r) => `${r.brand} (${(r.revenue ?? 0).toLocaleString()} ${r.currency ?? "SEK"} ${r.year ?? ""})`)
+                  .join(" · ")}
+              </p>
+            )}
           </section>
 
           <section className="crm-card">
@@ -1703,12 +1731,16 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                       ? "Används i AI-analys tills backend-API är kopplat."
                       : "Used in AI analysis until backend API integration is enabled."}
                   </p>
+                  <datalist id="brand-suggestions">
+                    {formConfig.brands.map((b) => <option key={b} value={b} />)}
+                  </datalist>
                   <div className="crm-list" style={{ marginTop: "0.55rem" }}>
                     {manualBrandRevenueRows.map((row) => (
                       <article key={row.key} className="crm-item">
                         <div className="crm-row" style={{ gap: "0.5rem" }}>
                           <input
                             className="crm-input"
+                            list="brand-suggestions"
                             value={row.brand}
                             placeholder={lang === "sv" ? "Varumärke" : "Brand"}
                             onChange={(event) => updateManualBrandRevenueRow(row.key, { brand: event.target.value })}

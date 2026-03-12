@@ -334,6 +334,7 @@ type ResearchConfig = {
   countries: string[];
   regionsByCountry: Array<{ country: string; regions: string[] }>;
   sellers: string[];
+  brands: string[];
   sellerAssignments: Array<{ seller: string; emails: string[] }>;
   requiredCustomerFields: Array<"name" | "industry" | "country" | "seller">;
   remindersEnabled: boolean;
@@ -498,6 +499,7 @@ const EMPTY_CONFIG: ResearchConfig = {
     { country: "LT", regions: ["Vilnius", "Kaunas", "Klaipeda", "Siauliai", "Panevezys", "Alytus", "Marijampole", "Utena", "Taurage", "Telsiai"] }
   ],
   sellers: ["Team Nordics"],
+  brands: [],
   sellerAssignments: [],
   requiredCustomerFields: ["name", "industry", "country", "seller"],
   remindersEnabled: true,
@@ -971,6 +973,10 @@ function ResearchAdminContent() {
         .filter(Boolean),
       regionsByCountry: parseRegionsByCountry(String(form.get("regionsByCountry") ?? "")),
       sellers: String(form.get("sellers") ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+      brands: String(form.get("brands") ?? "")
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
@@ -2372,6 +2378,14 @@ function ResearchAdminContent() {
                     <option key={seller} value={seller}>{seller}</option>
                   ))}
                 </select>
+              </div>
+              <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <textarea
+                  className="crm-textarea"
+                  name="brands"
+                  defaultValue={config.brands.join("\n")}
+                  placeholder={lang === "sv" ? "Varumärken, ett per rad" : "Brands, one per line"}
+                />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <textarea
