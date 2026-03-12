@@ -1200,7 +1200,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   }
 
   function addManualBrandRevenueRow() {
-    setManualBrandRevenueRows((prev) => [...prev, emptyManualBrandRevenueRow()]);
+    setManualBrandRevenueRows((prev) => [emptyManualBrandRevenueRow(), ...prev]);
   }
 
   function removeManualBrandRevenueRow(key: string) {
