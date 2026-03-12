@@ -74,6 +74,12 @@ type Customer = {
       updatedAt?: string;
       updatedBy?: string | null;
     }> | null;
+    extractedAutofill?: {
+      organization?: string | null;
+      industry?: string | null;
+      region?: string | null;
+      website?: string | null;
+    } | null;
   } | null;
 };
 
@@ -1656,8 +1662,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <form onSubmit={onSave} style={{ marginTop: "0.8rem" }}>
               <div className="crm-row">
                 <input className="crm-input" name="name" defaultValue={customer.name} placeholder={lang === "sv" ? "Namn" : "Name"} />
-                <input className="crm-input" name="organization" defaultValue={customer.organization ?? ""} placeholder={lang === "sv" ? "Organisation" : "Organization"} />
-                <select className="crm-select" name="industry" defaultValue={customer.industry ?? ""}>
+                <input className="crm-input" name="organization" defaultValue={customer.organization || customer.webshopSignals?.extractedAutofill?.organization || ""} placeholder={lang === "sv" ? "Organisation" : "Organization"} />
+                <select className="crm-select" name="industry" defaultValue={customer.industry || customer.webshopSignals?.extractedAutofill?.industry || ""}>
                   <option value="">{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
                   {industryOptions.map((option) => (
                     <option key={option} value={option}>
@@ -1680,7 +1686,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                     </option>
                   ))}
                 </select>
-                <select className="crm-select" name="region" defaultValue={customer.region ?? ""}>
+                <select className="crm-select" name="region" defaultValue={customer.region || customer.webshopSignals?.extractedAutofill?.region || ""}>
                   <option value="">{lang === "sv" ? "Välj region" : "Select region"}</option>
                   {regionOptions.map((option) => (
                     <option key={option} value={option}>
@@ -1698,7 +1704,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 </select>
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-                <input className="crm-input" name="website" defaultValue={customer.website ?? ""} placeholder={lang === "sv" ? "Webbsida" : "Website"} />
+                <input className="crm-input" name="website" defaultValue={customer.website || customer.webshopSignals?.extractedAutofill?.website || ""} placeholder={lang === "sv" ? "Webbsida" : "Website"} />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <input
