@@ -60,7 +60,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
     const body = (await req.json()) as {
       name?: string;
-      organization?: string;
+      registrationNumber?: string;
+      naceCode?: string;
       industry?: string;
       country?: string;
       region?: string;
@@ -99,7 +100,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       where: { id: params.id },
       data: {
         name: body.name,
-        organization: body.organization,
+        registrationNumber: body.registrationNumber,
+        naceCode: body.naceCode,
         industry: body.industry,
         country: body.country,
         region: body.region,

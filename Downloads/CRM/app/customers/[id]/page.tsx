@@ -7,7 +7,8 @@ import { useI18n } from "@/components/i18n";
 type Customer = {
   id: string;
   name: string;
-  organization: string | null;
+  registrationNumber: string | null;
+  naceCode: string | null;
   industry: string | null;
   country: string | null;
   region: string | null;
@@ -75,7 +76,8 @@ type Customer = {
       updatedBy?: string | null;
     }> | null;
     extractedAutofill?: {
-      organization?: string | null;
+      registrationNumber?: string | null;
+      naceCode?: string | null;
       industry?: string | null;
       region?: string | null;
       website?: string | null;
@@ -1260,7 +1262,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: form.get("name"),
-        organization: form.get("organization"),
+        registrationNumber: form.get("registrationNumber"),
+        naceCode: form.get("naceCode"),
         industry: form.get("industry"),
         country: form.get("country"),
         region: form.get("region"),
@@ -1689,7 +1692,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <form onSubmit={onSave} style={{ marginTop: "0.8rem" }}>
               <div className="crm-row">
                 <input className="crm-input" name="name" defaultValue={customer.name} placeholder={lang === "sv" ? "Namn" : "Name"} />
-                <input className="crm-input" name="organization" defaultValue={customer.organization || customer.webshopSignals?.extractedAutofill?.organization || ""} placeholder={lang === "sv" ? "Organisation" : "Organization"} />
+                <input className="crm-input" name="registrationNumber" defaultValue={customer.registrationNumber || customer.webshopSignals?.extractedAutofill?.registrationNumber || ""} placeholder={lang === "sv" ? "Org.nr" : "Reg number"} />
+                <input className="crm-input" name="naceCode" defaultValue={customer.naceCode || customer.webshopSignals?.extractedAutofill?.naceCode || ""} placeholder="NACE" style={{ maxWidth: "120px" }} />
                 <select className="crm-select" name="industry" defaultValue={customer.industry || customer.webshopSignals?.extractedAutofill?.industry || ""}>
                   <option value="">{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
                   {industryOptions.map((option) => (
