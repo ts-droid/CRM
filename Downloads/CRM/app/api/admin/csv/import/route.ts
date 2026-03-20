@@ -49,7 +49,8 @@ export async function POST(req: Request) {
 
       const data = {
         name,
-        organization: pick(row, ["organization", "organisation", "legal_name"]) || undefined,
+        registrationNumber: pick(row, ["registration_number", "org_number", "organization", "organisation", "legal_name"]) || undefined,
+        naceCode: pick(row, ["nace_code", "nace", "sni", "sni_code", "branch_code"]) || undefined,
         industry: pick(row, ["industry", "segment", "category"]) || undefined,
         country: pick(row, ["country", "country_code", "land"]) || undefined,
         region: pick(row, ["region", "area"]) || undefined,

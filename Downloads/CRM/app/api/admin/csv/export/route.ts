@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 const HEADERS = [
   "id",
   "name",
-  "organization",
+  "registrationNumber",
+  "naceCode",
   "industry",
   "country",
   "region",

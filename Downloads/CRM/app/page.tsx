@@ -222,7 +222,8 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: form.get("name"),
-          organization: form.get("organization"),
+          registrationNumber: form.get("registrationNumber"),
+          naceCode: form.get("naceCode"),
           industry: form.get("industry"),
           country: form.get("country"),
           region: form.get("region"),
@@ -296,7 +297,7 @@ export default function HomePage() {
         <form onSubmit={onSubmitNewCustomer} style={{ marginTop: "0.85rem" }}>
           <div className="crm-row">
             <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
-            <input className="crm-input" name="organization" placeholder={t("organization")} />
+            <input className="crm-input" name="registrationNumber" placeholder={t("registrationNumber")} />
             <select className="crm-select" name="industry" required={required.industry} defaultValue="">
               <option value="" disabled>{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
               {config.industries.map((item) => (

@@ -29,7 +29,7 @@ export async function GET(req: Request) {
       ? {
           OR: [
             { name: { contains: q, mode: "insensitive" as const } },
-            { organization: { contains: q, mode: "insensitive" as const } },
+            { registrationNumber: { contains: q, mode: "insensitive" as const } },
             { industry: { contains: q, mode: "insensitive" as const } },
             { country: { contains: q, mode: "insensitive" as const } },
             { region: { contains: q, mode: "insensitive" as const } },
@@ -103,7 +103,7 @@ export async function GET(req: Request) {
         ? {
             OR: [
               { name: { contains: q, mode: "insensitive" as const } },
-              { organization: { contains: q, mode: "insensitive" as const } },
+              { registrationNumber: { contains: q, mode: "insensitive" as const } },
               { industry: { contains: q, mode: "insensitive" as const } },
               { country: { contains: q, mode: "insensitive" as const } },
               { region: { contains: q, mode: "insensitive" as const } },
@@ -209,7 +209,8 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
       name?: string;
-      organization?: string;
+      registrationNumber?: string;
+      naceCode?: string;
       industry?: string;
       country?: string;
       region?: string;
@@ -228,7 +229,8 @@ export async function POST(req: Request) {
     const created = await prisma.customer.create({
       data: {
         name: body.name,
-        organization: body.organization,
+        registrationNumber: body.registrationNumber,
+        naceCode: body.naceCode,
         industry: body.industry,
         country: body.country,
         region: body.region,
