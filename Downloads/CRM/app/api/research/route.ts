@@ -2062,7 +2062,8 @@ export async function POST(req: Request) {
           "- Include at least 8 detailed next actions.",
           "- Do not stop after account header fields.",
           "- Be specific for the selected account, not generic.",
-          "- Always include the company registration number (org.nr), NACE/SNI industry code (e.g. 47.41 for computer retail), official website URL, headquarters city, countries of operation, revenue, employees, ownership, founded year, logistics model, and brand mix signals in account_summary. Use public registry data when available. For Nordic countries: use SNI (SE), SN (NO), DB (DK), TOL (FI), or NACE (EU) codes."
+          "- Always include the company registration number (org.nr), NACE/SNI industry code (e.g. 47.41 for computer retail), official website URL, headquarters city, countries of operation, revenue, employees, ownership, founded year, logistics model, and brand mix signals in account_summary. Use public registry data when available. For Nordic countries: use SNI (SE), SN (NO), DB (DK), TOL (FI), or NACE (EU) codes.",
+          "- CRITICAL SCORING RULE: If crm_customer_context contains salesRecords with historical purchase data (netSales, grossMargin, unitsSold), this is VERIFIED internal sales history and MUST heavily influence scoring. A customer with proven purchase history should score significantly higher on PotentialScore (execution likelihood is proven) and FitScore (assortment overlap is demonstrated). Historical netSales is the strongest evidence of future potential. Weight internal CRM data higher than public web signals."
         ].join("\n");
         const deepProfileJsonShape = [
           "RETURN THIS EXACT JSON SHAPE:",
