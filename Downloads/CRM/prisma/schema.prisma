@@ -31,7 +31,8 @@ enum ActivityType {
 model Customer {
   id             String    @id @default(cuid())
   name           String
-  organization   String?
+  registrationNumber String? @map("organization")
+  naceCode       String?
   industry       String?
   country        String?
   region         String?
