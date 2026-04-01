@@ -35,7 +35,7 @@ export function Header() {
     <header className="vendora-header">
       <div className="vendora-header-inner">
         <a href="/" className="vendora-brandmark" style={{ textDecoration: "none" }}>
-          <Image src="/vendora-logo-black.png" alt="Vendora Nordic" width={160} height={28} priority />
+          <Image src="/vendora-logo-black.png" alt="Vendora Nordic" width={320} height={56} priority style={{ height: "28px", width: "auto" }} />
         </a>
 
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
