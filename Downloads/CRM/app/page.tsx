@@ -84,6 +84,7 @@ export default function HomePage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [potentialScore, setPotentialScore] = useState(50);
+  const [showNewCustomer, setShowNewCustomer] = useState(false);
   const { t, lang } = useI18n();
 
   const required = useMemo(() => {
@@ -241,6 +242,7 @@ export default function HomePage() {
 
       event.currentTarget.reset();
       setPotentialScore(50);
+      setShowNewCustomer(false);
       await Promise.all([loadCustomers(), loadStats(), loadFacets()]);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
@@ -256,106 +258,94 @@ export default function HomePage() {
   return (
     <>
       <section className="crm-card">
-        <h2>{t("overviewTitle")}</h2>
-        <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
-          {lang === "sv"
-            ? "Sortera kunder på land och säljare, och prioritera efter potential för Vendora Nordics produktutbud."
-            : "Filter customers by country and seller, and prioritize by potential for Vendora Nordic's product portfolio."}
-        </p>
-      </section>
-
-      <section className="crm-grid" style={{ marginTop: "1rem" }}>
-        <article className="crm-card">
-          <h3>{t("customers")}</h3>
-          <p className="crm-stat">{stats.customers}</p>
-        </article>
-        <article className="crm-card">
-          <h3>{t("contacts")}</h3>
-          <p className="crm-stat">{stats.contacts}</p>
-        </article>
-        <article className="crm-card">
-          <h3>{t("plans")}</h3>
-          <p className="crm-stat">{stats.plans}</p>
-          <a
-            href="#new-customer"
-            className="crm-button crm-button-secondary"
-            style={{ marginTop: "0.65rem", display: "inline-block", textDecoration: "none" }}
-          >
-            {lang === "sv" ? "Ny kund" : "New customer"}
-          </a>
-        </article>
-      </section>
-
-      <section className="crm-card" id="new-customer" style={{ marginTop: "1rem" }}>
-        <h3>{lang === "sv" ? "Ny kund" : "New customer"}</h3>
-        <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-          {lang === "sv"
-            ? "Skapa ett kundkort med standardiserade fält för bransch, land och säljare."
-            : "Create a customer card with standardized fields for industry, country and seller."}
-        </p>
-        <form onSubmit={onSubmitNewCustomer} style={{ marginTop: "0.85rem" }}>
-          <div className="crm-row">
-            <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
-            <input className="crm-input" name="organization" placeholder={t("organization")} />
-            <select className="crm-select" name="industry" required={required.industry} defaultValue="">
-              <option value="" disabled>{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
-              {config.industries.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </div>
-          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <select className="crm-select" name="country" required={required.country} defaultValue="">
-              <option value="" disabled>{lang === "sv" ? "Välj land" : "Select country"}</option>
-              {config.countries.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-            <input className="crm-input" name="region" placeholder={lang === "sv" ? "Region (t.ex. Stockholm)" : "Region (e.g. Stockholm)"} />
-            <select className="crm-select" name="seller" required={required.seller} defaultValue="">
-              <option value="" disabled>{lang === "sv" ? "Välj säljare" : "Select seller"}</option>
-              {config.sellers.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </div>
-          <div className="crm-row" style={{ marginTop: "0.6rem" }}>
-            <input className="crm-input" name="website" placeholder={lang === "sv" ? "Webbsida (https://...)" : "Website (https://...)"} />
-            <input className="crm-input" name="email" placeholder={t("email")} type="email" />
-            <input className="crm-input" name="phone" placeholder={t("phone")} />
-          </div>
-          <div style={{ marginTop: "0.6rem" }}>
-            <label className="crm-subtle" htmlFor="overviewPotentialRange">
-              {lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}: {potentialScore}
-            </label>
-            <input
-              id="overviewPotentialRange"
-              className="crm-input"
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={potentialScore}
-              onChange={(event) => setPotentialScore(Number(event.target.value))}
-            />
+        <div className="crm-item-head">
+          <div>
+            <h2 style={{ margin: 0 }}>{lang === "sv" ? "Kunder" : "Customers"}</h2>
             <p className="crm-subtle" style={{ marginTop: "0.25rem" }}>
-              {lang === "sv" ? "0-30 låg, 31-60 medel, 61-80 hög, 81-100 strategisk." : "0-30 low, 31-60 medium, 61-80 high, 81-100 strategic."}
+              {stats.customers} {lang === "sv" ? "kunder" : "customers"}
+              {" · "}{stats.contacts} {lang === "sv" ? "kontakter" : "contacts"}
+              {" · "}{stats.plans} {lang === "sv" ? "planer" : "plans"}
             </p>
           </div>
-          <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={submitting}>
-            {submitting ? t("saving") : t("saveCustomer")}
+          <button
+            className="crm-button"
+            type="button"
+            onClick={() => setShowNewCustomer((prev) => !prev)}
+          >
+            {showNewCustomer
+              ? (lang === "sv" ? "Avbryt" : "Cancel")
+              : (lang === "sv" ? "+ Ny kund" : "+ New customer")}
           </button>
-          {createError ? (
-            <p className="crm-error" style={{ marginTop: "0.6rem" }}>
-              {createError}
-            </p>
-          ) : null}
-        </form>
+        </div>
       </section>
+
+      {showNewCustomer && (
+        <section className="crm-card" style={{ marginTop: "1rem" }}>
+          <h3>{lang === "sv" ? "Ny kund" : "New customer"}</h3>
+          <form onSubmit={onSubmitNewCustomer} style={{ marginTop: "0.85rem" }}>
+            <div className="crm-row">
+              <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
+              <input className="crm-input" name="organization" placeholder={t("organization")} />
+              <select className="crm-select" name="industry" required={required.industry} defaultValue="">
+                <option value="" disabled>{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
+                {config.industries.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <select className="crm-select" name="country" required={required.country} defaultValue="">
+                <option value="" disabled>{lang === "sv" ? "Välj land" : "Select country"}</option>
+                {config.countries.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+              <input className="crm-input" name="region" placeholder={lang === "sv" ? "Region (t.ex. Stockholm)" : "Region (e.g. Stockholm)"} />
+              <select className="crm-select" name="seller" required={required.seller} defaultValue="">
+                <option value="" disabled>{lang === "sv" ? "Välj säljare" : "Select seller"}</option>
+                {config.sellers.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <input className="crm-input" name="website" placeholder={lang === "sv" ? "Webbsida (https://...)" : "Website (https://...)"} />
+              <input className="crm-input" name="email" placeholder={t("email")} type="email" />
+              <input className="crm-input" name="phone" placeholder={t("phone")} />
+            </div>
+            <div style={{ marginTop: "0.6rem" }}>
+              <label className="crm-subtle" htmlFor="overviewPotentialRange">
+                {lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}: {potentialScore}
+              </label>
+              <input
+                id="overviewPotentialRange"
+                className="crm-input"
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={potentialScore}
+                onChange={(event) => setPotentialScore(Number(event.target.value))}
+              />
+              <p className="crm-subtle" style={{ marginTop: "0.25rem" }}>
+                {lang === "sv" ? "0-30 låg, 31-60 medel, 61-80 hög, 81-100 strategisk." : "0-30 low, 31-60 medium, 61-80 high, 81-100 strategic."}
+              </p>
+            </div>
+            <button className="crm-button" type="submit" style={{ marginTop: "0.7rem" }} disabled={submitting}>
+              {submitting ? t("saving") : t("saveCustomer")}
+            </button>
+            {createError ? (
+              <p className="crm-error" style={{ marginTop: "0.6rem" }}>
+                {createError}
+              </p>
+            ) : null}
+          </form>
+        </section>
+      )}
 
       <section className="crm-card" style={{ marginTop: "1rem" }}>
         <div className="crm-item-head">
-          <h3>{lang === "sv" ? "Prioriterad kundlista" : "Prioritized customer list"}</h3>
+          <h3>{lang === "sv" ? "Kundlista" : "Customer list"}</h3>
           <select className="crm-select" value={sort} onChange={(event) => setSort(event.target.value)}>
             <option value="potential">{lang === "sv" ? "Sort: Potential" : "Sort: Potential"}</option>
             <option value="name_asc">{lang === "sv" ? "Sort: Namn A-Ö" : "Sort: Name A-Z"}</option>
