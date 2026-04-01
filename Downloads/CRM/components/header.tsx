@@ -6,7 +6,7 @@ import { Nav } from "@/components/nav";
 import { useI18n } from "@/components/i18n";
 
 export function Header() {
-  const { lang, setLang, t } = useI18n();
+  const { lang, setLang } = useI18n();
   const [userEmail, setUserEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -32,34 +32,47 @@ export function Header() {
   }
 
   return (
-    <header className="crm-header">
-      <div className="crm-header-inner">
-        <div className="crm-brand-wrap">
-          <Image src="/vendora-logo.svg" alt="Vendora Nordic" width={36} height={36} className="crm-logo" priority />
-          <div>
-            <div className="crm-brand">{t("brandTitle")}</div>
-            <div className="crm-brand-subtle">{t("brandSubtitle")}</div>
-          </div>
+    <header className="vendora-header">
+      <div className="vendora-header-inner">
+        <div className="vendora-brandmark">
+          <Image src="/vendora-logo-black.png" alt="Vendora Nordic" width={160} height={28} priority />
         </div>
 
-        <div className="crm-header-controls">
+        <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
           <Nav isAdmin={isAdmin} />
-          {userEmail ? (
-            <div className="crm-user">
-              <span className="crm-subtle">{userEmail}</span>
-              <button type="button" className="crm-button crm-button-secondary" onClick={logout}>
-                {lang === "sv" ? "Logga ut" : "Log out"}
-              </button>
-            </div>
-          ) : null}
-          <div className="lang-switch" role="group" aria-label="Language switch">
-            <button type="button" className={`lang-btn${lang === "sv" ? " active" : ""}`} onClick={() => setLang("sv")}>
-              🇸🇪 {t("langSv")}
+
+          <button
+            type="button"
+            className={`lang-btn${lang === "sv" ? " active" : ""}`}
+            onClick={() => setLang("sv")}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: "13px", opacity: lang === "sv" ? 1 : 0.5 }}
+          >
+            🇸🇪
+          </button>
+          <button
+            type="button"
+            className={`lang-btn${lang === "en" ? " active" : ""}`}
+            onClick={() => setLang("en")}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: "13px", opacity: lang === "en" ? 1 : 0.5 }}
+          >
+            🇬🇧
+          </button>
+
+          {userEmail && (
+            <span style={{ fontSize: "13px", color: "var(--vendora-muted)" }}>{userEmail}</span>
+          )}
+
+          {isAdmin && (
+            <a href="/admin/research" className="vendora-btn vendora-btn-secondary" style={{ textDecoration: "none" }}>
+              Admin
+            </a>
+          )}
+
+          {userEmail && (
+            <button type="button" className="vendora-btn vendora-btn-primary" onClick={logout}>
+              {lang === "sv" ? "Logga ut" : "Log out"}
             </button>
-            <button type="button" className={`lang-btn${lang === "en" ? " active" : ""}`} onClick={() => setLang("en")}>
-              🇬🇧 {t("langEn")}
-            </button>
-          </div>
+          )}
         </div>
       </div>
     </header>

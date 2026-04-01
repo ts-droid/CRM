@@ -20,15 +20,15 @@ export function Nav({ isAdmin }: NavProps) {
   const links = [
     ...BASE_LINKS,
     { href: "/research", key: "navResearch" as const },
-    ...(isAdmin ? [{ href: "/admin/research", key: "navAdmin" as const }] : [])
+    ...(isAdmin ? [] : []) // admin link moved to header button
   ];
 
   return (
-    <nav className="crm-nav" aria-label="Main navigation">
+    <nav className="vendora-nav" aria-label="Main navigation">
       {links.map((link) => {
         const isActive = pathname === link.href;
         return (
-          <Link key={link.href} href={link.href} className={`crm-nav-link${isActive ? " active" : ""}`}>
+          <Link key={link.href} href={link.href} className={isActive ? "active" : ""}>
             {t(link.key)}
           </Link>
         );
