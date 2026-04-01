@@ -16,10 +16,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <LanguageProvider>
-          <div className="crm-shell">
-            <Header />
-            <main className="crm-main">{children}</main>
-          </div>
+          <Header />
+          <main className="vendora-shell">{children}</main>
         </LanguageProvider>
       </body>
     </html>

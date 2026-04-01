@@ -34,42 +34,36 @@ export function Header() {
   return (
     <header className="vendora-header">
       <div className="vendora-header-inner">
-        <div className="vendora-brandmark">
+        <a href="/" className="vendora-brandmark" style={{ textDecoration: "none" }}>
           <Image src="/vendora-logo-black.png" alt="Vendora Nordic" width={160} height={28} priority />
-        </div>
+        </a>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <Nav isAdmin={isAdmin} />
 
+          {/* Show only the OTHER language as a toggle */}
           <button
             type="button"
-            className={`lang-btn${lang === "sv" ? " active" : ""}`}
-            onClick={() => setLang("sv")}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: "13px", opacity: lang === "sv" ? 1 : 0.5 }}
+            className="vendora-lang-toggle"
+            onClick={() => setLang(lang === "sv" ? "en" : "sv")}
           >
-            🇸🇪
-          </button>
-          <button
-            type="button"
-            className={`lang-btn${lang === "en" ? " active" : ""}`}
-            onClick={() => setLang("en")}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: "13px", opacity: lang === "en" ? 1 : 0.5 }}
-          >
-            🇬🇧
+            {lang === "sv" ? "🇬🇧 English" : "🇸🇪 Svenska"}
           </button>
 
           {userEmail && (
-            <span style={{ fontSize: "13px", color: "var(--vendora-muted)" }}>{userEmail}</span>
+            <span style={{ fontSize: "13px", color: "var(--vendora-muted)", letterSpacing: "0.01em" }}>
+              {userEmail}
+            </span>
           )}
 
           {isAdmin && (
-            <a href="/admin/research" className="vendora-btn vendora-btn-secondary" style={{ textDecoration: "none" }}>
+            <a href="/admin/research" className="vendora-btn vendora-btn-secondary" style={{ textDecoration: "none", padding: "10px 16px", fontSize: "13px" }}>
               Admin
             </a>
           )}
 
           {userEmail && (
-            <button type="button" className="vendora-btn vendora-btn-primary" onClick={logout}>
+            <button type="button" className="vendora-btn vendora-btn-primary" onClick={logout} style={{ padding: "10px 16px", fontSize: "13px" }}>
               {lang === "sv" ? "Logga ut" : "Log out"}
             </button>
           )}
