@@ -4,23 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/components/i18n";
 
-const BASE_LINKS = [
-  { href: "/", key: "navOverview" },
-  { href: "/contacts", key: "navContacts" },
-  { href: "/plans", key: "navPlans" },
-] as const;
-
 type NavProps = {
   isAdmin: boolean;
 };
 
-export function Nav({ isAdmin }: NavProps) {
+export function Nav({ isAdmin: _isAdmin }: NavProps) {
   const pathname = usePathname();
   const { t } = useI18n();
   const links = [
-    ...BASE_LINKS,
-    { href: "/research", key: "navResearch" as const },
-    ...(isAdmin ? [] : []) // admin link moved to header button
+    { href: "/", key: "navOverview" as const },
   ];
 
   return (
