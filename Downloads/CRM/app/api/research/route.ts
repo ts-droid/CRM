@@ -106,7 +106,6 @@ type MinimalCustomer = {
   id: string;
   name: string;
   registrationNumber: string | null;
-  naceCode: string | null;
   country: string | null;
   region: string | null;
   industry: string | null;
@@ -122,7 +121,6 @@ type CustomerResearchContext = {
     id: string;
     name: string;
     registrationNumber: string | null;
-    naceCode: string | null;
     country: string | null;
     region: string | null;
     industry: string | null;
@@ -426,8 +424,7 @@ type StructuredResearchInsight = {
 };
 
 type ResearchAutofill = {
-  registrationNumber?: string;
-  naceCode?: string;
+  organization?: string;
   industry?: string;
   region?: string;
   website?: string;
@@ -605,8 +602,6 @@ function extractResearchAutofill(raw: Record<string, unknown>): ResearchAutofill
     {};
   const segments = asStringArray(accountSummary.segment_channel_profile);
   const website = asString(accountSummary.website);
-  const registrationNumber = asString(accountSummary.registration_number);
-  const naceCode = asString(accountSummary.nace_code);
   const legalName = asString(accountSummary.legal_name);
   const hqRaw = accountSummary.headquarters;
   const headquarters =
@@ -618,8 +613,7 @@ function extractResearchAutofill(raw: Record<string, unknown>): ResearchAutofill
   const inferredIndustry = inferIndustryFromSegments(segments);
 
   return {
-    registrationNumber: registrationNumber || legalName || undefined,
-    naceCode: naceCode || undefined,
+    organization: legalName || undefined,
     industry: inferredIndustry || undefined,
     region: parseRegionFromHeadquarters(headquarters) || undefined,
     website: website || undefined
@@ -669,7 +663,6 @@ async function saveResearchInsightToCustomer(
       webshopSignals: true,
       notes: true,
       registrationNumber: true,
-      naceCode: true,
       industry: true,
       region: true,
       website: true
@@ -745,14 +738,12 @@ async function saveResearchInsightToCustomer(
 
   const autofill = extractResearchAutofill(insight.raw);
   (nextSignals as Record<string, unknown>).extractedAutofill = {
-    registrationNumber: autofill.registrationNumber || null,
-    naceCode: autofill.naceCode || null,
+    organization: autofill.organization || null,
     industry: autofill.industry || null,
     region: autofill.region || null,
     website: autofill.website || null
   };
-  const applyOrganization = !asString(existing.registrationNumber) && asString(autofill.registrationNumber);
-  const applyNaceCode = !asString(existing.naceCode) && asString(autofill.naceCode);
+  const applyOrganization = !asString(existing.registrationNumber) && asString(autofill.organization);
   const applyIndustry = !asString(existing.industry) && asString(autofill.industry);
   const applyRegion = !asString(existing.region) && asString(autofill.region);
   const applyWebsite = !asString(existing.website) && asString(autofill.website);
@@ -773,7 +764,6 @@ async function saveResearchInsightToCustomer(
       notes: mergedNotes,
       webshopSignals: nextSignals as Prisma.InputJsonValue,
       registrationNumber: applyOrganization || undefined,
-      naceCode: applyNaceCode || undefined,
       industry: applyIndustry || undefined,
       region: applyRegion || undefined,
       website: applyWebsite || undefined
@@ -795,7 +785,6 @@ async function loadCustomerResearchContext(customerId: string): Promise<Customer
       id: true,
       name: true,
       registrationNumber: true,
-      naceCode: true,
       country: true,
       region: true,
       industry: true,
@@ -890,7 +879,6 @@ async function loadCustomerResearchContext(customerId: string): Promise<Customer
       id: customer.id,
       name: customer.name,
       registrationNumber: customer.registrationNumber,
-      naceCode: customer.naceCode,
       country: customer.country,
       region: customer.region,
       industry: customer.industry,
@@ -1239,7 +1227,6 @@ async function crmFallbackSimilarCustomers(
       id: true,
       name: true,
       registrationNumber: true,
-      naceCode: true,
       country: true,
       region: true,
       industry: true,
@@ -1920,7 +1907,6 @@ export async function POST(req: Request) {
           id: true,
           name: true,
           registrationNumber: true,
-          naceCode: true,
           country: true,
           region: true,
           industry: true,
@@ -2061,26 +2047,12 @@ export async function POST(req: Request) {
           "- Include estimated revenue/size signals with confidence and source notes.",
           "- Include at least 8 detailed next actions.",
           "- Do not stop after account header fields.",
-          "- Be specific for the selected account, not generic.",
-          "- Always include the company registration number (org.nr), NACE/SNI industry code (e.g. 47.41 for computer retail), official website URL, headquarters city, countries of operation, revenue, employees, ownership, founded year, logistics model, and brand mix signals in account_summary. Use public registry data when available. For Nordic countries: use SNI (SE), SN (NO), DB (DK), TOL (FI), or NACE (EU) codes.",
-          "- CRITICAL SCORING RULE: If crm_customer_context contains salesRecords with historical purchase data (netSales, grossMargin, unitsSold), this is VERIFIED internal sales history and MUST heavily influence scoring. A customer with proven purchase history should score significantly higher on PotentialScore (execution likelihood is proven) and FitScore (assortment overlap is demonstrated). Historical netSales is the strongest evidence of future potential. Weight internal CRM data higher than public web signals."
+          "- Be specific for the selected account, not generic."
         ].join("\n");
         const deepProfileJsonShape = [
           "RETURN THIS EXACT JSON SHAPE:",
           "{",
           '  "account_summary": {',
-          '    "registration_number": "",',
-          '    "nace_code": "",',
-          '    "legal_name": "",',
-          '    "website": "",',
-          '    "headquarters": "",',
-          '    "countries_of_operation": [],',
-          '    "revenue": { "value": "", "year": "", "status": "Verified|Estimated", "source": "" },',
-          '    "employees": { "value": "", "year": "", "status": "Verified|Estimated", "source": "" },',
-          '    "ownership": { "value": "", "year": "", "status": "Verified|Estimated", "source": "" },',
-          '    "founded": { "value": "", "year": "", "status": "Verified|Estimated", "source": "" },',
-          '    "logistics_model": "",',
-          '    "brand_mix_signals": [],',
           '    "summary": "",',
           '    "segment_channel_profile": [],',
           '    "commercial_relevance_for_vendora": "",',
@@ -2115,8 +2087,7 @@ export async function POST(req: Request) {
         const profilePayload = {
           target_account: {
             name: companyName,
-            registration_number: baseCustomer?.registrationNumber ?? null,
-            nace_code: baseCustomer?.naceCode ?? null,
+            registrationNumber: baseCustomer?.registrationNumber ?? null,
             country,
             region,
             industry,
@@ -2407,8 +2378,7 @@ export async function POST(req: Request) {
       const primaryTaskPrompt = buildTaskPrompt(taskBasePrompt, {
         reference_customer: {
           name: companyName,
-          registration_number: baseCustomer?.registrationNumber ?? null,
-          nace_code: baseCustomer?.naceCode ?? null,
+          registrationNumber: baseCustomer?.registrationNumber ?? null,
           country,
           region,
           industry,
@@ -2450,8 +2420,7 @@ export async function POST(req: Request) {
       let finalPrompt = composePrompt(settings.globalSystemPrompt, buildTaskPrompt(guardedSimilarPrompt, {
         reference_customer: {
           name: companyName,
-          registration_number: baseCustomer?.registrationNumber ?? null,
-          nace_code: baseCustomer?.naceCode ?? null,
+          registrationNumber: baseCustomer?.registrationNumber ?? null,
           country,
           region,
           industry,
@@ -2557,7 +2526,7 @@ export async function POST(req: Request) {
         const fallbackTaskPrompt = buildTaskPrompt(guardedSimilarPrompt, {
           reference_customer: {
             name: companyName,
-            registration_number: baseCustomer?.registrationNumber ?? null,
+            registrationNumber: baseCustomer?.registrationNumber ?? null,
             country,
             region,
             industry,

@@ -210,7 +210,6 @@ export async function POST(req: Request) {
     const body = (await req.json()) as {
       name?: string;
       registrationNumber?: string;
-      naceCode?: string;
       industry?: string;
       country?: string;
       region?: string;
@@ -230,7 +229,6 @@ export async function POST(req: Request) {
       data: {
         name: body.name,
         registrationNumber: body.registrationNumber,
-        naceCode: body.naceCode,
         industry: body.industry,
         country: body.country,
         region: body.region,
