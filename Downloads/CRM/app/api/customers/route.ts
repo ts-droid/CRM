@@ -14,6 +14,8 @@ export async function GET(req: Request) {
   const potentialMin = potentialMinRaw && potentialMinRaw.trim() !== "" ? Number(potentialMinRaw) : Number.NaN;
   const potentialMax = potentialMaxRaw && potentialMaxRaw.trim() !== "" ? Number(potentialMaxRaw) : Number.NaN;
   const sort = searchParams.get("sort");
+  const status = searchParams.get("status");
+  const noSeller = searchParams.get("noSeller") === "1";
   const facetsOnly = searchParams.get("facets") === "1";
   const pageRaw = searchParams.get("page");
   const pageSizeRaw = searchParams.get("pageSize");
@@ -25,6 +27,8 @@ export async function GET(req: Request) {
     ...(country ? { country } : {}),
     ...(seller ? { seller } : {}),
     ...(industry ? { industry } : {}),
+    ...(status ? { status } : {}),
+    ...(noSeller ? { OR: [{ seller: null }, { seller: "" }] } : {}),
     ...(q
       ? {
           OR: [
@@ -99,6 +103,7 @@ export async function GET(req: Request) {
   if (facetsOnly) {
     const whereForFacets = {
       ...(industry ? { industry } : {}),
+      ...(status ? { status } : {}),
       ...(q
         ? {
             OR: [
@@ -219,6 +224,7 @@ export async function POST(req: Request) {
       phone?: string;
       notes?: string;
       potentialScore?: number;
+      status?: string;
     };
 
     if (!body.name || body.name.trim().length < 2) {
@@ -237,7 +243,8 @@ export async function POST(req: Request) {
         email: body.email,
         phone: body.phone,
         notes: body.notes,
-        potentialScore: typeof body.potentialScore === "number" ? body.potentialScore : 50
+        potentialScore: typeof body.potentialScore === "number" ? body.potentialScore : 50,
+        status: body.status ?? "prospect"
       }
     });
 
