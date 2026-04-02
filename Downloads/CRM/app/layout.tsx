@@ -17,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <LanguageProvider>
           <Header />
-          <main className="vendora-shell">{children}</main>
+          <main className="vendora-shell" style={{ paddingTop: "32px" }}>{children}</main>
         </LanguageProvider>
       </body>
     </html>
