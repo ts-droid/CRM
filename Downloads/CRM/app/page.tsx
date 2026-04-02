@@ -303,17 +303,6 @@ export default function HomePage() {
   return (
     <>
       <section className="crm-card">
-        <div className="crm-item-head">
-          <div>
-            <h2 style={{ margin: 0 }}>{lang === "sv" ? "Kunder" : "Customers"}</h2>
-            <p className="crm-subtle" style={{ marginTop: "0.25rem" }}>
-              {stats.customers} {lang === "sv" ? "kunder" : "customers"}
-              {" · "}{stats.contacts} {lang === "sv" ? "kontakter" : "contacts"}
-              {" · "}{stats.plans} {lang === "sv" ? "planer" : "plans"}
-            </p>
-          </div>
-        </div>
-
         {/* Tab bar */}
         <div className="crm-row" style={{ marginTop: "1rem", gap: "0.5rem" }}>
           <button
