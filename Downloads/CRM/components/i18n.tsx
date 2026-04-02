@@ -63,7 +63,10 @@ const STRINGS: Record<Lang, Dict> = {
     statusPlanned: "Planerad",
     statusInProgress: "Pågående",
     statusOnHold: "Pausad",
-    statusCompleted: "Klar"
+    statusCompleted: "Klar",
+    tabCustomers: "Kunder",
+    tabProspects: "Prospects",
+    tabNewCustomer: "Ny kund"
   },
   en: {
     brandTitle: "Vendora Nordic CRM",
@@ -120,7 +123,10 @@ const STRINGS: Record<Lang, Dict> = {
     statusPlanned: "Planned",
     statusInProgress: "In progress",
     statusOnHold: "On hold",
-    statusCompleted: "Completed"
+    statusCompleted: "Completed",
+    tabCustomers: "Customers",
+    tabProspects: "Prospects",
+    tabNewCustomer: "New customer"
   }
 };
 

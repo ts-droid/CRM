@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/components/i18n";
 
+type Tab = "customers" | "prospects" | "new";
+
 type Customer = {
   id: string;
   name: string;
@@ -12,6 +14,7 @@ type Customer = {
   seller: string | null;
   industry: string | null;
   potentialScore: number;
+  status: string;
 };
 
 type CustomerListResponse = {
@@ -84,7 +87,9 @@ export default function HomePage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [potentialScore, setPotentialScore] = useState(50);
-  const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("customers");
+  const [prospectNoSellerCount, setProspectNoSellerCount] = useState(0);
+  const [customerNoSellerCount, setCustomerNoSellerCount] = useState(0);
   const { t, lang } = useI18n();
 
   const required = useMemo(() => {
@@ -117,11 +122,32 @@ export default function HomePage() {
     }
   }
 
+  async function loadBadgeCounts() {
+    try {
+      const [pRes, cRes] = await Promise.all([
+        fetch("/api/customers?status=prospect&noSeller=1&page=1&pageSize=1&sort=potential", { cache: "no-store" }),
+        fetch("/api/customers?status=customer&noSeller=1&page=1&pageSize=1&sort=potential", { cache: "no-store" })
+      ]);
+      if (pRes.ok) {
+        const data = (await pRes.json()) as { total?: number };
+        setProspectNoSellerCount(data.total ?? 0);
+      }
+      if (cRes.ok) {
+        const data = (await cRes.json()) as { total?: number };
+        setCustomerNoSellerCount(data.total ?? 0);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   async function loadCustomers() {
+    if (activeTab === "new") return;
     const params = new URLSearchParams();
     params.set("sort", sort);
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
+    params.set("status", activeTab === "customers" ? "customer" : "prospect");
     if (query) params.set("q", query);
     if (country) params.set("country", country);
     if (seller && (facetSellers.length === 0 || facetSellers.includes(seller))) {
@@ -147,6 +173,9 @@ export default function HomePage() {
     const params = new URLSearchParams();
     params.set("facets", "1");
     if (query) params.set("q", query);
+    if (activeTab !== "new") {
+      params.set("status", activeTab === "customers" ? "customer" : "prospect");
+    }
     const res = await fetch(`/api/customers?${params.toString()}`, { cache: "no-store" });
     if (!res.ok) return;
     const data = (await res.json()) as { countries?: string[]; sellers?: string[] };
@@ -157,6 +186,7 @@ export default function HomePage() {
   useEffect(() => {
     loadStats();
     loadSettings();
+    loadBadgeCounts();
   }, []);
 
   useEffect(() => {
@@ -189,15 +219,15 @@ export default function HomePage() {
 
   useEffect(() => {
     setPage(1);
-  }, [country, seller, sort, query]);
+  }, [country, seller, sort, query, activeTab]);
 
   useEffect(() => {
     loadCustomers();
-  }, [country, seller, sort, page, query]);
+  }, [country, seller, sort, page, query, activeTab]);
 
   useEffect(() => {
     loadFacets();
-  }, [query]);
+  }, [query, activeTab]);
 
   useEffect(() => {
     if (country && facetCountries.length > 0 && !facetCountries.includes(country)) {
@@ -242,8 +272,8 @@ export default function HomePage() {
 
       event.currentTarget.reset();
       setPotentialScore(50);
-      setShowNewCustomer(false);
-      await Promise.all([loadCustomers(), loadStats(), loadFacets()]);
+      setActiveTab("prospects");
+      await Promise.all([loadStats(), loadBadgeCounts()]);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
@@ -252,8 +282,22 @@ export default function HomePage() {
   }
 
   const countries = useMemo(() => facetCountries, [facetCountries]);
-
   const sellers = useMemo(() => facetSellers, [facetSellers]);
+
+  const badgeStyle = (color: string): React.CSSProperties => ({
+    position: "absolute",
+    top: "-7px",
+    right: "-7px",
+    background: color,
+    color: "#fff",
+    borderRadius: "999px",
+    fontSize: "0.68rem",
+    fontWeight: 700,
+    padding: "1px 5px",
+    minWidth: "17px",
+    textAlign: "center",
+    lineHeight: "1.5"
+  });
 
   return (
     <>
@@ -267,21 +311,49 @@ export default function HomePage() {
               {" · "}{stats.plans} {lang === "sv" ? "planer" : "plans"}
             </p>
           </div>
+        </div>
+
+        {/* Tab bar */}
+        <div className="crm-row" style={{ marginTop: "1rem", gap: "0.5rem" }}>
           <button
-            className="crm-button"
+            className={`crm-tab${activeTab === "customers" ? " active" : ""}`}
             type="button"
-            onClick={() => setShowNewCustomer((prev) => !prev)}
+            onClick={() => setActiveTab("customers")}
+            style={{ position: "relative" }}
           >
-            {showNewCustomer
-              ? (lang === "sv" ? "Avbryt" : "Cancel")
-              : (lang === "sv" ? "+ Ny kund" : "+ New customer")}
+            {t("tabCustomers")}
+            {customerNoSellerCount > 0 && (
+              <span style={badgeStyle("var(--vendora-bad, #c63b25)")}>
+                {customerNoSellerCount}
+              </span>
+            )}
+          </button>
+          <button
+            className={`crm-tab${activeTab === "prospects" ? " active" : ""}`}
+            type="button"
+            onClick={() => setActiveTab("prospects")}
+            style={{ position: "relative" }}
+          >
+            {t("tabProspects")}
+            {prospectNoSellerCount > 0 && (
+              <span style={badgeStyle("var(--vendora-warn, #b56b16)")}>
+                {prospectNoSellerCount}
+              </span>
+            )}
+          </button>
+          <button
+            className={`crm-tab${activeTab === "new" ? " active" : ""}`}
+            type="button"
+            onClick={() => setActiveTab("new")}
+          >
+            + {t("tabNewCustomer")}
           </button>
         </div>
       </section>
 
-      {showNewCustomer && (
+      {activeTab === "new" ? (
         <section className="crm-card" style={{ marginTop: "1rem" }}>
-          <h3>{lang === "sv" ? "Ny kund" : "New customer"}</h3>
+          <h3>{t("tabNewCustomer")}</h3>
           <form onSubmit={onSubmitNewCustomer} style={{ marginTop: "0.85rem" }}>
             <div className="crm-row">
               <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
@@ -341,97 +413,99 @@ export default function HomePage() {
             ) : null}
           </form>
         </section>
-      )}
+      ) : (
+        <section className="crm-card" style={{ marginTop: "1rem" }}>
+          <div className="crm-item-head">
+            <h3>{activeTab === "customers" ? (lang === "sv" ? "Kundlista" : "Customer list") : (lang === "sv" ? "Prospektlista" : "Prospect list")}</h3>
+            <select className="crm-select" value={sort} onChange={(event) => setSort(event.target.value)}>
+              <option value="potential">{lang === "sv" ? "Sort: Potential" : "Sort: Potential"}</option>
+              <option value="name_asc">{lang === "sv" ? "Sort: Namn A-Ö" : "Sort: Name A-Z"}</option>
+              <option value="name_desc">{lang === "sv" ? "Sort: Namn Ö-A" : "Sort: Name Z-A"}</option>
+              <option value="updated">{lang === "sv" ? "Sort: Senast uppdaterad" : "Sort: Last updated"}</option>
+            </select>
+          </div>
 
-      <section className="crm-card" style={{ marginTop: "1rem" }}>
-        <div className="crm-item-head">
-          <h3>{lang === "sv" ? "Kundlista" : "Customer list"}</h3>
-          <select className="crm-select" value={sort} onChange={(event) => setSort(event.target.value)}>
-            <option value="potential">{lang === "sv" ? "Sort: Potential" : "Sort: Potential"}</option>
-            <option value="name_asc">{lang === "sv" ? "Sort: Namn A-Ö" : "Sort: Name A-Z"}</option>
-            <option value="name_desc">{lang === "sv" ? "Sort: Namn Ö-A" : "Sort: Name Z-A"}</option>
-            <option value="updated">{lang === "sv" ? "Sort: Senast uppdaterad" : "Sort: Last updated"}</option>
-          </select>
-        </div>
+          <div className="crm-row" style={{ marginTop: "0.7rem" }}>
+            <input
+              className="crm-input"
+              value={queryInput}
+              onChange={(event) => setQueryInput(event.target.value)}
+              placeholder={lang === "sv" ? "Sök globalt i kunder, kontakter, planer, aktiviteter..." : "Live search across customers, contacts, plans, activities..."}
+            />
+            <select className="crm-select" value={country} onChange={(event) => setCountry(event.target.value)}>
+              <option value="">{lang === "sv" ? "Alla länder" : "All countries"}</option>
+              {countries.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
 
-        <div className="crm-row" style={{ marginTop: "0.7rem" }}>
-          <input
-            className="crm-input"
-            value={queryInput}
-            onChange={(event) => setQueryInput(event.target.value)}
-            placeholder={lang === "sv" ? "Sök globalt i kunder, kontakter, planer, aktiviteter..." : "Live search across customers, contacts, plans, activities..."}
-          />
-          <select className="crm-select" value={country} onChange={(event) => setCountry(event.target.value)}>
-            <option value="">{lang === "sv" ? "Alla länder" : "All countries"}</option>
-            {countries.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+            <select className="crm-select" value={seller} onChange={(event) => setSeller(event.target.value)}>
+              <option value="">{lang === "sv" ? "Alla säljare" : "All sellers"}</option>
+              {sellers.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="crm-list" style={{ marginTop: "0.7rem" }}>
+            {rows.map((customer) => (
+              <Link
+                key={customer.id}
+                href={`/customers/${customer.id}`}
+                className="crm-item-link"
+                aria-label={(lang === "sv" ? "Öppna kundkort för " : "Open customer profile for ") + customer.name}
+              >
+                <article className="crm-item">
+                  <div className="crm-item-head">
+                    <strong>{customer.name}</strong>
+                    <span className="crm-badge">{lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}</span>
+                  </div>
+                  <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
+                    {(customer.country ?? "-") + " · " + (customer.region ?? "-") + " · " + (customer.seller ?? "-")}
+                    {customer.industry ? ` · ${customer.industry}` : ""}
+                  </p>
+                </article>
+              </Link>
             ))}
-          </select>
-
-          <select className="crm-select" value={seller} onChange={(event) => setSeller(event.target.value)}>
-            <option value="">{lang === "sv" ? "Alla säljare" : "All sellers"}</option>
-            {sellers.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="crm-list" style={{ marginTop: "0.7rem" }}>
-          {rows.map((customer) => (
-            <Link
-              key={customer.id}
-              href={`/customers/${customer.id}`}
-              className="crm-item-link"
-              aria-label={(lang === "sv" ? "Öppna kundkort för " : "Open customer profile for ") + customer.name}
-            >
+            {rows.length === 0 ? (
               <article className="crm-item">
-                <div className="crm-item-head">
-                  <strong>{customer.name}</strong>
-                  <span className="crm-badge">{lang === "sv" ? "Potential" : "Potential"}: {customer.potentialScore}</span>
-                </div>
-                <p className="crm-subtle" style={{ marginTop: "0.35rem" }}>
-                  {(customer.country ?? "-") + " · " + (customer.region ?? "-") + " · " + (customer.seller ?? "-")}
-                  {customer.industry ? ` · ${customer.industry}` : ""}
+                <p className="crm-subtle">
+                  {activeTab === "prospects"
+                    ? (lang === "sv" ? "Inga prospects matchar din sökning." : "No prospects matched your search.")
+                    : (lang === "sv" ? "Inga kunder matchar din sökning." : "No customers matched your search.")}
                 </p>
               </article>
-            </Link>
-          ))}
-          {rows.length === 0 ? (
-            <article className="crm-item">
-              <p className="crm-subtle">
-                {lang === "sv" ? "Inga kunder matchar din sökning." : "No customers matched your search."}
-              </p>
-            </article>
-          ) : null}
-        </div>
-        <div className="crm-row" style={{ marginTop: "0.7rem", justifyContent: "space-between", alignItems: "center" }}>
-          <p className="crm-subtle">
-            {lang === "sv"
-              ? `Visar ${(page - 1) * pageSize + (rows.length > 0 ? 1 : 0)}-${(page - 1) * pageSize + rows.length} av ${totalRows}`
-              : `Showing ${(page - 1) * pageSize + (rows.length > 0 ? 1 : 0)}-${(page - 1) * pageSize + rows.length} of ${totalRows}`}
-          </p>
-          <div className="crm-row">
-            <button className="crm-button crm-button-secondary" type="button" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>
-              {lang === "sv" ? "Föregående" : "Previous"}
-            </button>
-            <span className="crm-subtle" style={{ alignSelf: "center" }}>
-              {page} / {Math.max(1, totalPages)}
-            </span>
-            <button
-              className="crm-button crm-button-secondary"
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-            >
-              {lang === "sv" ? "Nästa" : "Next"}
-            </button>
+            ) : null}
           </div>
-        </div>
-      </section>
+          <div className="crm-row" style={{ marginTop: "0.7rem", justifyContent: "space-between", alignItems: "center" }}>
+            <p className="crm-subtle">
+              {lang === "sv"
+                ? `Visar ${(page - 1) * pageSize + (rows.length > 0 ? 1 : 0)}-${(page - 1) * pageSize + rows.length} av ${totalRows}`
+                : `Showing ${(page - 1) * pageSize + (rows.length > 0 ? 1 : 0)}-${(page - 1) * pageSize + rows.length} of ${totalRows}`}
+            </p>
+            <div className="crm-row">
+              <button className="crm-button crm-button-secondary" type="button" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>
+                {lang === "sv" ? "Föregående" : "Previous"}
+              </button>
+              <span className="crm-subtle" style={{ alignSelf: "center" }}>
+                {page} / {Math.max(1, totalPages)}
+              </span>
+              <button
+                className="crm-button crm-button-secondary"
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              >
+                {lang === "sv" ? "Nästa" : "Next"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {!stats.available ? (
         <section className="crm-card" style={{ marginTop: "1rem" }}>
