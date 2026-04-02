@@ -32,7 +32,8 @@ model Customer {
   id             String    @id @default(cuid())
   name           String
   registrationNumber String?   @map("organization")
-  industry       String?
+  naceCode           String?
+  industry           String?
   country        String?
   region         String?
   seller         String?
