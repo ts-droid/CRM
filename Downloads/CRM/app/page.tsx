@@ -261,7 +261,8 @@ export default function HomePage() {
           website: form.get("website"),
           email: form.get("email"),
           phone: form.get("phone"),
-          potentialScore
+          potentialScore,
+          status: form.get("status") ?? "prospect"
         })
       });
 
@@ -347,6 +348,10 @@ export default function HomePage() {
             <div className="crm-row">
               <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
               <input className="crm-input" name="organization" placeholder={t("organization")} />
+              <select className="crm-select" name="status" defaultValue="prospect">
+                <option value="prospect">{lang === "sv" ? "Prospect" : "Prospect"}</option>
+                <option value="customer">{lang === "sv" ? "Kund" : "Customer"}</option>
+              </select>
               <select className="crm-select" name="industry" required={required.industry} defaultValue="">
                 <option value="" disabled>{lang === "sv" ? "Välj bransch" : "Select industry"}</option>
                 {config.industries.map((item) => (
