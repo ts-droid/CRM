@@ -7,7 +7,6 @@ import { useI18n } from "@/components/i18n";
 
 export function Header() {
   const { lang, setLang } = useI18n();
-  const [userEmail, setUserEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
@@ -17,19 +16,12 @@ export function Header() {
         return (await res.json()) as { email?: string; isAdmin?: boolean };
       })
       .then((data) => {
-        setUserEmail(data?.email || "");
         setIsAdmin(Boolean(data?.isAdmin));
       })
       .catch(() => {
-        setUserEmail("");
         setIsAdmin(false);
       });
   }, []);
-
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  }
 
   return (
     <header className="vendora-header">
@@ -41,7 +33,6 @@ export function Header() {
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <Nav isAdmin={isAdmin} />
 
-          {/* Show only the OTHER language as a toggle */}
           <button
             type="button"
             className="vendora-lang-toggle"
@@ -50,22 +41,10 @@ export function Header() {
             {lang === "sv" ? "🇬🇧 English" : "🇸🇪 Svenska"}
           </button>
 
-          {userEmail && (
-            <span style={{ fontSize: "13px", color: "var(--vendora-muted)", letterSpacing: "0.01em" }}>
-              {userEmail}
-            </span>
-          )}
-
           {isAdmin && (
             <a href="/admin/research" className="vendora-btn vendora-btn-secondary" style={{ textDecoration: "none", padding: "10px 16px", fontSize: "13px" }}>
               Admin
             </a>
-          )}
-
-          {userEmail && (
-            <button type="button" className="vendora-btn vendora-btn-primary" onClick={logout} style={{ padding: "10px 16px", fontSize: "13px" }}>
-              {lang === "sv" ? "Logga ut" : "Log out"}
-            </button>
           )}
         </div>
       </div>
