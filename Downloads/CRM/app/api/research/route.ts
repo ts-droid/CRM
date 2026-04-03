@@ -1763,18 +1763,22 @@ async function discoverCompanySignals(input: {
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const text = `${signal.title} ${signal.snippet}`.toLowerCase();
     const urlDomain = toDomain(normalizedUrl);
     const companyMatch =
       normalizeCompanyName(signal.title).includes(companyNameNeedle) ||
       normalizeCompanyName(signal.snippet).includes(companyNameNeedle) ||
       (websiteDomain && urlDomain === websiteDomain);
 
-    const strongBusinessSignal =
-      /\b(ab|as|a\/s|oy|aps|oü|gmbh|ltd|inc)\b/i.test(text) ||
-      /\b(revenue|employees|omsättning|turnover|org\.?|organisation|about|om oss)\b/i.test(text);
+    // Require ALL significant tokens of the company name to appear in the raw text.
+    // This prevents unrelated companies (e.g. "BioNordic A/S" when searching "BORN Nordic ApS")
+    // from slipping through just because they share one word or a legal suffix.
+    const companyTokens = normalizedCompanyTokens(input.companyName);
+    const rawText = `${signal.title} ${signal.snippet}`.toLowerCase().replace(/[^a-z0-9]/g, " ");
+    const allTokensMatch =
+      companyTokens.length >= 2 &&
+      companyTokens.every((token) => rawText.includes(token));
 
-    if (!companyMatch && !strongBusinessSignal) continue;
+    if (!companyMatch && !allTokensMatch) continue;
 
     filtered.push({
       ...signal,
