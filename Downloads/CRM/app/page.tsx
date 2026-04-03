@@ -25,13 +25,6 @@ type CustomerListResponse = {
   totalPages: number;
 };
 
-type Stats = {
-  customers: number;
-  contacts: number;
-  plans: number;
-  available: boolean;
-  reason?: string | null;
-};
 
 type FormConfig = {
   industries: string[];
@@ -69,7 +62,6 @@ const DEFAULT_CONFIG: FormConfig = {
 };
 
 export default function HomePage() {
-  const [stats, setStats] = useState<Stats>({ customers: 0, contacts: 0, plans: 0, available: false, reason: null });
   const [rows, setRows] = useState<Customer[]>([]);
   const [country, setCountry] = useState("");
   const [seller, setSeller] = useState("");
@@ -100,16 +92,6 @@ export default function HomePage() {
       seller: requiredSet.has("seller")
     };
   }, [config.requiredCustomerFields]);
-
-  async function loadStats() {
-    try {
-      const res = await fetch("/api/stats", { cache: "no-store" });
-      if (!res.ok) return;
-      setStats((await res.json()) as Stats);
-    } catch {
-      // ignore: dashboard still renders with fallback values
-    }
-  }
 
   async function loadSettings() {
     try {
@@ -184,7 +166,6 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    loadStats();
     loadSettings();
     loadBadgeCounts();
   }, []);
@@ -274,7 +255,7 @@ export default function HomePage() {
       event.currentTarget.reset();
       setPotentialScore(50);
       setActiveTab("prospects");
-      await Promise.all([loadStats(), loadBadgeCounts()]);
+      await loadBadgeCounts();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : lang === "sv" ? "Något gick fel" : "Something went wrong");
     } finally {
@@ -501,14 +482,6 @@ export default function HomePage() {
         </section>
       )}
 
-      {!stats.available ? (
-        <section className="crm-card" style={{ marginTop: "1rem" }}>
-          <p className="crm-subtle">
-            {t("dbMissing")}
-            {stats.reason ? ` (${stats.reason})` : ""}
-          </p>
-        </section>
-      ) : null}
     </>
   );
 }
