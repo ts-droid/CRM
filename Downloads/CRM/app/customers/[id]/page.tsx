@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/components/i18n";
 
@@ -586,6 +587,7 @@ function emptyManualBrandRevenueRow(): ManualBrandRevenueRow {
 
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const salesSectionEnabled = process.env.NEXT_PUBLIC_FEATURE_SALES_SECTION === "true";
+  const router = useRouter();
   const { lang } = useI18n();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "contacts" | "plans" | "activity" | "research">("overview");
@@ -1282,6 +1284,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
     setStatus(lang === "sv" ? "Sparat" : "Saved");
     await loadCustomer();
+    router.push("/");
 
     // Merge any new brands into admin settings so they appear in the dropdown next time
     const newBrands = manualBrandRevenue.map((r) => r.brand).filter((b) => b && !formConfig.brands.includes(b));
