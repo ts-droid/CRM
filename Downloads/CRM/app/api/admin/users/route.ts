@@ -24,6 +24,7 @@ export async function GET() {
       id: true,
       email: true,
       name: true,
+      department: true,
       slackMemberId: true,
       lastLoginAt: true,
       updatedAt: true
@@ -62,6 +63,7 @@ export async function GET() {
       id: true,
       email: true,
       name: true,
+      department: true,
       slackMemberId: true,
       lastLoginAt: true,
       updatedAt: true
@@ -78,7 +80,7 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   try {
-    const body = (await req.json()) as { id?: string; slackMemberId?: string | null };
+    const body = (await req.json()) as { id?: string; name?: string | null; department?: string | null; slackMemberId?: string | null };
     const id = String(body.id || "").trim();
     if (!id) {
       return NextResponse.json({ error: "Missing user id" }, { status: 400 });
@@ -87,11 +89,16 @@ export async function PUT(req: Request) {
     const slackMemberId = String(body.slackMemberId || "").trim();
     const user = await prisma.userProfile.update({
       where: { id },
-      data: { slackMemberId: slackMemberId || null },
+      data: {
+        ...(body.name !== undefined ? { name: String(body.name || "").trim() || null } : {}),
+        ...(body.department !== undefined ? { department: String(body.department || "").trim() || null } : {}),
+        slackMemberId: slackMemberId || null
+      },
       select: {
         id: true,
         email: true,
         name: true,
+        department: true,
         slackMemberId: true,
         lastLoginAt: true,
         updatedAt: true

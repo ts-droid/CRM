@@ -82,3 +82,55 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 }
+
+export async function PATCH(req: Request) {
+  try {
+    const body = (await req.json()) as {
+      id?: string;
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      phone?: string;
+      department?: string;
+      title?: string;
+      notes?: string;
+    };
+
+    const id = String(body.id || "").trim();
+    if (!id) {
+      return NextResponse.json({ error: "Contact id is required" }, { status: 400 });
+    }
+
+    const updated = await prisma.contact.update({
+      where: { id },
+      data: {
+        ...(body.firstName !== undefined ? { firstName: body.firstName.trim() } : {}),
+        ...(body.lastName !== undefined ? { lastName: body.lastName.trim() } : {}),
+        ...(body.email !== undefined ? { email: body.email.trim() || null } : {}),
+        ...(body.phone !== undefined ? { phone: body.phone.trim() || null } : {}),
+        ...(body.department !== undefined ? { department: body.department.trim() || null } : {}),
+        ...(body.title !== undefined ? { title: body.title.trim() || null, role: body.title.trim() || null } : {}),
+        ...(body.notes !== undefined ? { notes: body.notes.trim() || null } : {})
+      }
+    });
+
+    return NextResponse.json(updated);
+  } catch {
+    return NextResponse.json({ error: "Failed to update contact" }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "Contact id is required" }, { status: 400 });
+    }
+
+    await prisma.contact.delete({ where: { id } });
+    return NextResponse.json({ deleted: true });
+  } catch {
+    return NextResponse.json({ error: "Failed to delete contact" }, { status: 400 });
+  }
+}
