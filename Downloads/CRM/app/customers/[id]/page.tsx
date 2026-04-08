@@ -14,6 +14,7 @@ type Customer = {
   country: string | null;
   region: string | null;
   seller: string | null;
+  address: string | null;
   website: string | null;
   email: string | null;
   phone: string | null;
@@ -81,6 +82,7 @@ type Customer = {
       naceCode?: string | null;
       industry?: string | null;
       region?: string | null;
+      address?: string | null;
       website?: string | null;
     } | null;
   } | null;
@@ -1270,6 +1272,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         country: form.get("country"),
         region: form.get("region"),
         seller: form.get("seller"),
+        address: form.get("address"),
         website: form.get("website"),
         notes: form.get("notes"),
         potentialScore: Number(form.get("potentialScore") || 50),
@@ -1765,6 +1768,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 </select>
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+                <input className="crm-input" name="address" defaultValue={customer.address || customer.webshopSignals?.extractedAutofill?.address || ""} placeholder={lang === "sv" ? "Adress" : "Address"} />
                 <input className="crm-input" name="website" defaultValue={customer.website || customer.webshopSignals?.extractedAutofill?.website || ""} placeholder={lang === "sv" ? "Webbsida" : "Website"} />
               </div>
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>

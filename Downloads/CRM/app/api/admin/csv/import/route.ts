@@ -55,6 +55,7 @@ export async function POST(req: Request) {
         country: pick(row, ["country", "country_code", "land"]) || undefined,
         region: pick(row, ["region", "area"]) || undefined,
         seller: pick(row, ["seller", "owner", "sales_owner", "account_owner"]) || undefined,
+        address: pick(row, ["address", "adress", "street", "visiting_address"]) || undefined,
         website: pick(row, ["website", "site", "url", "domain"]) || undefined,
         email: pick(row, ["email", "contact_email"]) || undefined,
         phone: pick(row, ["phone", "telephone", "mobile"]) || undefined,

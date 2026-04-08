@@ -241,6 +241,7 @@ export default function HomePage() {
           country: form.get("country"),
           region: form.get("region"),
           seller: form.get("seller"),
+          address: form.get("address"),
           website: form.get("website"),
           email: form.get("email"),
           phone: form.get("phone"),
@@ -330,7 +331,7 @@ export default function HomePage() {
           <form onSubmit={onSubmitNewCustomer} style={{ marginTop: "0.85rem" }}>
             <div className="crm-row">
               <input className="crm-input" name="name" placeholder={t("name")} required minLength={2} />
-              <input className="crm-input" name="organization" placeholder={t("organization")} />
+              <input className="crm-input" name="registrationNumber" placeholder={lang === "sv" ? "Org.nr" : "Reg number"} />
               <select className="crm-select" name="status" defaultValue="prospect">
                 <option value="prospect">{lang === "sv" ? "Prospect" : "Prospect"}</option>
                 <option value="customer">{lang === "sv" ? "Kund" : "Customer"}</option>
@@ -358,7 +359,10 @@ export default function HomePage() {
               </select>
             </div>
             <div className="crm-row" style={{ marginTop: "0.6rem" }}>
+              <input className="crm-input" name="address" placeholder={lang === "sv" ? "Adress" : "Address"} />
               <input className="crm-input" name="website" placeholder={lang === "sv" ? "Webbsida (https://...)" : "Website (https://...)"} />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.6rem" }}>
               <input className="crm-input" name="email" placeholder={t("email")} type="email" />
               <input className="crm-input" name="phone" placeholder={t("phone")} />
             </div>

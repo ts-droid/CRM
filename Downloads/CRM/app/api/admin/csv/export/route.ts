@@ -13,6 +13,7 @@ const HEADERS = [
   "country",
   "region",
   "seller",
+  "address",
   "website",
   "email",
   "phone",
