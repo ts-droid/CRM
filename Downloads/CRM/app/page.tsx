@@ -214,7 +214,8 @@ export default function HomePage() {
     event.preventDefault();
     setSubmitting(true);
     setCreateError(null);
-    const form = new FormData(event.currentTarget);
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
 
     try {
       const res = await fetch("/api/customers", {
@@ -240,7 +241,7 @@ export default function HomePage() {
         throw new Error(data.error ?? (lang === "sv" ? "Kunde inte skapa kund" : "Could not create customer"));
       }
 
-      event.currentTarget.reset();
+      formEl.reset();
       setPotentialScore(50);
       await Promise.all([loadCustomers(), loadStats(), loadFacets()]);
     } catch (err) {
