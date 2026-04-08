@@ -425,8 +425,10 @@ type StructuredResearchInsight = {
 
 type ResearchAutofill = {
   organization?: string;
+  naceCode?: string;
   industry?: string;
   region?: string;
+  address?: string;
   website?: string;
 };
 
@@ -602,6 +604,8 @@ function extractResearchAutofill(raw: Record<string, unknown>): ResearchAutofill
     {};
   const segments = asStringArray(accountSummary.segment_channel_profile);
   const website = asString(accountSummary.website);
+  const registrationNumber = asString(accountSummary.registration_number);
+  const naceCode = asString(accountSummary.nace_code);
   const legalName = asString(accountSummary.legal_name);
   const hqRaw = accountSummary.headquarters;
   const headquarters =
@@ -610,12 +614,15 @@ function extractResearchAutofill(raw: Record<string, unknown>): ResearchAutofill
       : asObject(hqRaw)
       ? [asString((hqRaw as Record<string, unknown>).city), asString((hqRaw as Record<string, unknown>).region)].filter(Boolean).join(", ")
       : "";
+  const addressRaw = asString(accountSummary.address) || asString(accountSummary.visiting_address);
   const inferredIndustry = inferIndustryFromSegments(segments);
 
   return {
-    organization: legalName || undefined,
+    organization: registrationNumber || legalName || undefined,
+    naceCode: naceCode || undefined,
     industry: inferredIndustry || undefined,
     region: parseRegionFromHeadquarters(headquarters) || undefined,
+    address: addressRaw || (headquarters ? headquarters : undefined),
     website: website || undefined
   };
 }
@@ -663,8 +670,10 @@ async function saveResearchInsightToCustomer(
       webshopSignals: true,
       notes: true,
       registrationNumber: true,
+      naceCode: true,
       industry: true,
       region: true,
+      address: true,
       website: true
     }
   });
@@ -739,13 +748,17 @@ async function saveResearchInsightToCustomer(
   const autofill = extractResearchAutofill(insight.raw);
   (nextSignals as Record<string, unknown>).extractedAutofill = {
     organization: autofill.organization || null,
+    naceCode: autofill.naceCode || null,
     industry: autofill.industry || null,
     region: autofill.region || null,
+    address: autofill.address || null,
     website: autofill.website || null
   };
   const applyOrganization = !asString(existing.registrationNumber) && asString(autofill.organization);
+  const applyNaceCode = !asString(existing.naceCode) && asString(autofill.naceCode);
   const applyIndustry = !asString(existing.industry) && asString(autofill.industry);
   const applyRegion = !asString(existing.region) && asString(autofill.region);
+  const applyAddress = !asString(existing.address) && asString(autofill.address);
   const applyWebsite = !asString(existing.website) && asString(autofill.website);
 
   const nextPotential =
@@ -764,8 +777,10 @@ async function saveResearchInsightToCustomer(
       notes: mergedNotes,
       webshopSignals: nextSignals as Prisma.InputJsonValue,
       registrationNumber: applyOrganization || undefined,
+      naceCode: applyNaceCode || undefined,
       industry: applyIndustry || undefined,
       region: applyRegion || undefined,
+      address: applyAddress || undefined,
       website: applyWebsite || undefined
     },
     select: {
@@ -2051,12 +2066,26 @@ export async function POST(req: Request) {
           "- Include estimated revenue/size signals with confidence and source notes.",
           "- Include at least 8 detailed next actions.",
           "- Do not stop after account header fields.",
-          "- Be specific for the selected account, not generic."
+          "- Be specific for the selected account, not generic.",
+          "- Always include the company registration number (org.nr), NACE/SNI industry code, visiting address, official website URL, headquarters city, and key company facts in account_summary. Use public registry data when available. For Nordic countries: use SNI (SE), SN (NO), DB (DK), TOL (FI), or NACE (EU) codes."
         ].join("\n");
         const deepProfileJsonShape = [
           "RETURN THIS EXACT JSON SHAPE:",
           "{",
           '  "account_summary": {',
+          '    "registration_number": "",',
+          '    "nace_code": "",',
+          '    "legal_name": "",',
+          '    "address": "",',
+          '    "website": "",',
+          '    "headquarters": "",',
+          '    "countries_of_operation": [],',
+          '    "revenue": { "value": "", "year": "", "status": "Verified|Estimated", "source": "" },',
+          '    "employees": { "value": "", "year": "", "status": "Verified|Estimated", "source": "" },',
+          '    "ownership": { "value": "", "year": "", "status": "Verified|Estimated", "source": "" },',
+          '    "founded": { "value": "", "year": "", "status": "Verified|Estimated", "source": "" },',
+          '    "logistics_model": "",',
+          '    "brand_mix_signals": [],',
           '    "summary": "",',
           '    "segment_channel_profile": [],',
           '    "commercial_relevance_for_vendora": "",',

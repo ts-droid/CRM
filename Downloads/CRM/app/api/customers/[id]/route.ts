@@ -65,6 +65,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       country?: string;
       region?: string;
       seller?: string;
+      address?: string;
       website?: string;
       email?: string;
       phone?: string;
@@ -104,6 +105,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         country: body.country,
         region: body.region,
         seller: body.seller,
+        address: body.address,
         website: body.website,
         email: body.email,
         phone: body.phone,

@@ -37,6 +37,7 @@ model Customer {
   country        String?
   region         String?
   seller         String?
+  address        String?
   website        String?
   email          String?
   phone          String?
