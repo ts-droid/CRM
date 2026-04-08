@@ -20,6 +20,7 @@ type Customer = {
   phone: string | null;
   notes: string | null;
   potentialScore: number;
+  status: string;
   updatedAt: string;
   contacts: Array<{
     id: string;
@@ -1782,6 +1783,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   placeholder={lang === "sv" ? "Potential (0-100)" : "Potential (0-100)"}
                 />
               </div>
+              {customer.status !== "prospect" ? (
               <div className="crm-list" style={{ marginTop: "0.7rem" }}>
                 <article className="crm-item">
                   <div className="crm-item-head">
@@ -1870,6 +1872,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   </p>
                 </article>
               </div>
+              ) : null}
               <div className="crm-row" style={{ marginTop: "0.6rem" }}>
                 <textarea className="crm-textarea" name="notes" defaultValue={customer.notes ?? ""} placeholder={lang === "sv" ? "Noteringar" : "Notes"} />
               </div>
