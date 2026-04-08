@@ -596,11 +596,39 @@ function ResearchAdminContent() {
   const [researchRunMode, setResearchRunMode] = useState<"profile" | "similar">("profile");
 
   const [researchLoading, setResearchLoading] = useState(false);
+  const [researchLoadingStep, setResearchLoadingStep] = useState(0);
   const [researchError, setResearchError] = useState<string>("");
   const [result, setResult] = useState<ResearchResponse | null>(null);
   const [researchBasePromptDraft, setResearchBasePromptDraft] = useState("");
   const [researchExtraInstructionsDraft, setResearchExtraInstructionsDraft] = useState("");
   const [autoRunKey, setAutoRunKey] = useState("");
+
+  const loadingStepsSv = [
+    "AI arbetar med att analysera kunddata och externa signaler...",
+    "Hämtar webbplatsdata och publika register...",
+    "Analyserar bransch och konkurrenter...",
+    "Beräknar poäng och potential...",
+    "Sammanställer rekommendationer...",
+    "AI-tjänsten är överbelastad — försöker igen automatiskt...",
+    "Väntar på svar från AI — detta kan ta en stund..."
+  ];
+  const loadingStepsEn = [
+    "AI is analyzing customer data and external signals...",
+    "Fetching website data and public registries...",
+    "Analyzing industry and competitors...",
+    "Calculating scores and potential...",
+    "Compiling recommendations...",
+    "AI service is overloaded — retrying automatically...",
+    "Waiting for AI response — this may take a moment..."
+  ];
+
+  useEffect(() => {
+    if (!researchLoading) { setResearchLoadingStep(0); return; }
+    const interval = setInterval(() => {
+      setResearchLoadingStep((prev) => Math.min(prev + 1, loadingStepsSv.length - 1));
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [researchLoading]);
 
   const [csvStatus, setCsvStatus] = useState<string>("");
   const [csvLoading, setCsvLoading] = useState(false);
@@ -1272,10 +1300,10 @@ function ResearchAdminContent() {
               </button>
               {researchLoading ? (
                 <div className="crm-ai-loading" role="status" aria-live="polite">
-                  <p className="crm-subtle">
+                  <p className="crm-subtle" style={{ transition: "opacity 0.3s" }}>
                     {lang === "sv"
-                      ? "AI arbetar med att analysera kunddata och externa signaler..."
-                      : "AI is analyzing customer data and external signals..."}
+                      ? loadingStepsSv[researchLoadingStep]
+                      : loadingStepsEn[researchLoadingStep]}
                   </p>
                   <div className="crm-progress">
                     <span />

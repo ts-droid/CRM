@@ -51,35 +51,52 @@ async function generateWithClaude(prompt: string, options: GeminiOptions = {}): 
   const cacheTtl = options.cacheTtl === "1h" ? "1h" : undefined;
 
   for (const model of modelCandidates) {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        temperature: 0.2,
-        system: usePromptCaching
-          ? [
-              {
-                type: "text",
-                text: systemPrompt,
-                cache_control: cacheTtl ? { type: "ephemeral", ttl: cacheTtl } : { type: "ephemeral" }
-              }
-            ]
-          : systemPrompt,
-        messages: [{ role: "user", content: userPrompt }]
-      }),
-      cache: "no-store"
-    });
+    const maxRetries = 3;
+    let attempt = 0;
+    let response: Response | null = null;
 
-    if (!response.ok) {
-      const body = await response.text();
-      lastError = `Claude request failed (${response.status}) on ${model}: ${body.slice(0, 300)}`;
-      if (response.status === 404) continue;
+    while (attempt < maxRetries) {
+      response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: maxTokens,
+          temperature: 0.2,
+          system: usePromptCaching
+            ? [
+                {
+                  type: "text",
+                  text: systemPrompt,
+                  cache_control: cacheTtl ? { type: "ephemeral", ttl: cacheTtl } : { type: "ephemeral" }
+                }
+              ]
+            : systemPrompt,
+          messages: [{ role: "user", content: userPrompt }]
+        }),
+        cache: "no-store"
+      });
+
+      if (response.ok) break;
+
+      const isRetryable = response.status === 429 || response.status === 529;
+      if (!isRetryable) break;
+
+      attempt++;
+      if (attempt < maxRetries) {
+        const delay = Math.min(2000 * Math.pow(2, attempt - 1), 15000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    if (!response || !response.ok) {
+      const body = response ? await response.text() : "No response";
+      lastError = `Claude request failed (${response?.status ?? 0}) on ${model}: ${body.slice(0, 300)}`;
+      if (response?.status === 404) continue;
       throw new Error(lastError);
     }
 
@@ -122,39 +139,56 @@ async function generateWithGeminiCore(prompt: string, options: GeminiOptions = {
 
   for (const model of modelCandidates) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.2,
-          topP: 0.9,
-          maxOutputTokens,
-          ...(options.jsonMode ? { responseMimeType: "application/json" } : {})
-        },
-        ...(options.jsonMode
-          ? {
-              systemInstruction: {
-                parts: [{ text: "Return only valid JSON. No markdown fences or prose outside JSON." }]
-              }
-            }
-          : {})
-      }),
-      cache: "no-store"
-    });
+    const maxRetries = 3;
+    let attempt = 0;
+    let response: Response | null = null;
 
-    if (!response.ok) {
-      const body = await response.text();
-      lastError = `Gemini request failed (${response.status}) on ${model}: ${body.slice(0, 300)}`;
-      if (response.status === 404) {
+    while (attempt < maxRetries) {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.2,
+            topP: 0.9,
+            maxOutputTokens,
+            ...(options.jsonMode ? { responseMimeType: "application/json" } : {})
+          },
+          ...(options.jsonMode
+            ? {
+                systemInstruction: {
+                  parts: [{ text: "Return only valid JSON. No markdown fences or prose outside JSON." }]
+                }
+              }
+            : {})
+        }),
+        cache: "no-store"
+      });
+
+      if (response.ok) break;
+
+      const isRetryable = response.status === 429 || response.status === 503 || response.status === 529;
+      if (!isRetryable) break;
+
+      attempt++;
+      if (attempt < maxRetries) {
+        const delay = Math.min(2000 * Math.pow(2, attempt - 1), 15000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    if (!response || !response.ok) {
+      const body = response ? await response.text() : "No response";
+      lastError = `Gemini request failed (${response?.status ?? 0}) on ${model}: ${body.slice(0, 300)}`;
+      if (response?.status === 404) {
         continue;
       }
       throw new Error(lastError);
