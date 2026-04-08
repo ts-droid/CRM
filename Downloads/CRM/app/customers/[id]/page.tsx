@@ -1304,6 +1304,33 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     }
   }
 
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteCustomer() {
+    const confirmed = window.confirm(
+      lang === "sv"
+        ? `Är du säker på att du vill ta bort ${customer?.name}? Alla kontakter och planer raderas permanent.`
+        : `Are you sure you want to delete ${customer?.name}? All contacts and plans will be permanently removed.`
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/customers/${params.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setDeleteError(data.error ?? (lang === "sv" ? "Kunde inte ta bort" : "Could not delete"));
+        return;
+      }
+      window.location.href = "/";
+    } catch {
+      setDeleteError(lang === "sv" ? "Något gick fel" : "Something went wrong");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function runSimilarSearch() {
     setSimilarLoading(true);
     setSimilarStatus(lang === "sv" ? "AI arbetar med att hitta liknande kunder..." : "AI is finding similar customers...");
@@ -1860,6 +1887,20 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   : `Saved at ${savedAtText} by ${lastSavedBy}`}
               </p>
               {status ? <p className="crm-subtle" style={{ marginTop: "0.6rem" }}>{status}</p> : null}
+              <div style={{ marginTop: "1.5rem", borderTop: "1px solid #e5e5e5", paddingTop: "1rem" }}>
+                <button
+                  className="crm-button"
+                  type="button"
+                  disabled={deleting}
+                  onClick={deleteCustomer}
+                  style={{ background: "#c63b25", color: "#fff", opacity: deleting ? 0.6 : 1 }}
+                >
+                  {deleting
+                    ? (lang === "sv" ? "Tar bort..." : "Deleting...")
+                    : (lang === "sv" ? "Ta bort kund" : "Delete customer")}
+                </button>
+                {deleteError ? <p style={{ color: "#c63b25", marginTop: "0.4rem", fontSize: "0.85rem" }}>{deleteError}</p> : null}
+              </div>
               {similarLoading ? (
                 <div style={{ marginTop: "0.6rem" }}>
                   <p className="crm-subtle">{lang === "sv" ? "AI arbetar..." : "AI is working..."}</p>
