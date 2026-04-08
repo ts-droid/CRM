@@ -96,6 +96,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       webshopSignalsUpdate = { ...currentSignals, manualBrandRevenue: validated };
     }
 
+    // Auto-promote prospect → customer when a seller is assigned
+    let autoStatus: string | undefined;
+    if (body.seller && body.seller.trim()) {
+      const current = await prisma.customer.findUnique({
+        where: { id: params.id },
+        select: { status: true, seller: true }
+      });
+      if (current?.status === "prospect" && !current.seller?.trim()) {
+        autoStatus = "customer";
+      }
+    }
+
     const updated = await prisma.customer.update({
       where: { id: params.id },
       data: {
@@ -105,6 +117,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         country: body.country,
         region: body.region,
         seller: body.seller,
+        ...(autoStatus ? { status: autoStatus } : {}),
         address: body.address,
         website: body.website,
         email: body.email,
