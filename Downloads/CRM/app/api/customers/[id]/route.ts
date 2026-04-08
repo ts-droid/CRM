@@ -133,3 +133,45 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 }
+
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  try {
+    const customer = await prisma.customer.findUnique({
+      where: { id: params.id },
+      select: {
+        id: true,
+        webshopSignals: true,
+        _count: { select: { salesRecords: true } }
+      }
+    });
+
+    if (!customer) {
+      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    }
+
+    const signals = customer.webshopSignals && typeof customer.webshopSignals === "object"
+      ? (customer.webshopSignals as Record<string, unknown>)
+      : {};
+    const researchHistory = Array.isArray(signals.researchHistory) ? signals.researchHistory : [];
+
+    if (researchHistory.length > 0) {
+      return NextResponse.json(
+        { error: "Cannot delete customer with research data. Remove research first." },
+        { status: 400 }
+      );
+    }
+
+    if (customer._count.salesRecords > 0) {
+      return NextResponse.json(
+        { error: "Cannot delete customer with sales records." },
+        { status: 400 }
+      );
+    }
+
+    await prisma.customer.delete({ where: { id: params.id } });
+
+    return NextResponse.json({ deleted: true });
+  } catch {
+    return NextResponse.json({ error: "Failed to delete customer" }, { status: 500 });
+  }
+}
