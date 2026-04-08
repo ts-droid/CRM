@@ -135,6 +135,7 @@ model UserProfile {
   email         String   @unique
   name          String?
   picture       String?
+  department    String?
   slackMemberId String?
   lastLoginAt   DateTime?
   createdAt     DateTime @default(now())
