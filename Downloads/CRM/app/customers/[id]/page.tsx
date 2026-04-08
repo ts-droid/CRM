@@ -614,6 +614,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [contactStatus, setContactStatus] = useState<string>("");
   const [contactsSaving, setContactsSaving] = useState(false);
   const [newContacts, setNewContacts] = useState<ContactDraft[]>([emptyContactDraft()]);
+  const [editContact, setEditContact] = useState<{ id: string; firstName: string; lastName: string; email: string; phone: string; department: string; title: string; notes: string } | null>(null);
+  const [editContactSaving, setEditContactSaving] = useState(false);
+  const [editContactError, setEditContactError] = useState("");
   const [salesData, setSalesData] = useState<SalesResponse | null>(null);
   const [salesLoading, setSalesLoading] = useState(false);
   const [salesError, setSalesError] = useState("");
@@ -1503,6 +1506,50 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     );
   }
 
+  async function saveEditContact() {
+    if (!editContact) return;
+    setEditContactSaving(true);
+    setEditContactError("");
+    try {
+      const res = await fetch("/api/contacts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editContact)
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setEditContactError(data.error ?? "Error");
+        return;
+      }
+      setEditContact(null);
+      await loadCustomer();
+    } catch {
+      setEditContactError(lang === "sv" ? "Något gick fel" : "Something went wrong");
+    } finally {
+      setEditContactSaving(false);
+    }
+  }
+
+  async function deleteEditContact() {
+    if (!editContact) return;
+    const confirmed = window.confirm(
+      lang === "sv"
+        ? `Vill du ta bort kontakten ${editContact.firstName} ${editContact.lastName}?`
+        : `Delete contact ${editContact.firstName} ${editContact.lastName}?`
+    );
+    if (!confirmed) return;
+    setEditContactSaving(true);
+    try {
+      await fetch(`/api/contacts?id=${editContact.id}`, { method: "DELETE" });
+      setEditContact(null);
+      await loadCustomer();
+    } catch {
+      setEditContactError(lang === "sv" ? "Kunde inte ta bort" : "Could not delete");
+    } finally {
+      setEditContactSaving(false);
+    }
+  }
+
   function addContactDraft() {
     setNewContacts((prev) => [...prev, emptyContactDraft()]);
   }
@@ -2356,7 +2403,21 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <p className="crm-empty">{lang === "sv" ? "Inga kontakter registrerade." : "No contacts registered."}</p>
           ) : (
             customer.contacts.map((contact) => (
-              <article key={contact.id} className="crm-item">
+              <article
+                key={contact.id}
+                className="crm-item"
+                style={{ cursor: "pointer" }}
+                onClick={() => setEditContact({
+                  id: contact.id,
+                  firstName: contact.firstName,
+                  lastName: contact.lastName ?? "",
+                  email: contact.email ?? "",
+                  phone: contact.phone ?? "",
+                  department: contact.department ?? "",
+                  title: contact.title ?? "",
+                  notes: contact.notes ?? ""
+                })}
+              >
                 <div className="crm-item-head">
                   <strong>{contact.firstName} {contact.lastName}</strong>
                   <span className="crm-badge">{contact.title ?? "-"}</span>
@@ -2789,6 +2850,47 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             {lang === "sv" ? "Senast synk" : "Last synced"}: {customer.webshopSignals.syncedAt ?? "-"}
           </p>
         </section>
+      ) : null}
+
+      {editContact ? (
+        <div className="crm-modal-backdrop" onClick={() => setEditContact(null)}>
+          <article className="crm-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{lang === "sv" ? "Redigera kontakt" : "Edit contact"}</h3>
+            <div style={{ marginTop: "0.8rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div className="crm-row">
+                <input className="crm-input" value={editContact.firstName} onChange={(e) => setEditContact({ ...editContact, firstName: e.target.value })} placeholder={lang === "sv" ? "Förnamn" : "First name"} />
+                <input className="crm-input" value={editContact.lastName} onChange={(e) => setEditContact({ ...editContact, lastName: e.target.value })} placeholder={lang === "sv" ? "Efternamn" : "Last name"} />
+              </div>
+              <div className="crm-row">
+                <input className="crm-input" value={editContact.email} onChange={(e) => setEditContact({ ...editContact, email: e.target.value })} placeholder={lang === "sv" ? "E-post" : "Email"} type="email" />
+                <input className="crm-input" value={editContact.phone} onChange={(e) => setEditContact({ ...editContact, phone: e.target.value })} placeholder={lang === "sv" ? "Telefon" : "Phone"} />
+              </div>
+              <div className="crm-row">
+                <input className="crm-input" value={editContact.department} onChange={(e) => setEditContact({ ...editContact, department: e.target.value })} placeholder={lang === "sv" ? "Avdelning" : "Department"} />
+                <input className="crm-input" value={editContact.title} onChange={(e) => setEditContact({ ...editContact, title: e.target.value })} placeholder={lang === "sv" ? "Befattning" : "Title"} />
+              </div>
+              <textarea className="crm-textarea" value={editContact.notes} onChange={(e) => setEditContact({ ...editContact, notes: e.target.value })} placeholder={lang === "sv" ? "Noteringar" : "Notes"} />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.8rem" }}>
+              <button className="crm-button" disabled={editContactSaving} onClick={saveEditContact}>
+                {editContactSaving ? (lang === "sv" ? "Sparar..." : "Saving...") : (lang === "sv" ? "Spara" : "Save")}
+              </button>
+              <button className="crm-button crm-button-secondary" onClick={() => setEditContact(null)}>
+                {lang === "sv" ? "Avbryt" : "Cancel"}
+              </button>
+              <button
+                className="crm-button"
+                type="button"
+                disabled={editContactSaving}
+                onClick={deleteEditContact}
+                style={{ background: "#c63b25", color: "#fff", marginLeft: "auto" }}
+              >
+                {lang === "sv" ? "Ta bort" : "Delete"}
+              </button>
+            </div>
+            {editContactError ? <p style={{ color: "#c63b25", marginTop: "0.4rem", fontSize: "0.85rem" }}>{editContactError}</p> : null}
+          </article>
+        </div>
       ) : null}
 
     </div>

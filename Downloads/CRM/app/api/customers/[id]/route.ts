@@ -3,6 +3,8 @@ import { ActivityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
+import { sendSlackMessage } from "@/lib/notifications";
+import { getResearchConfig } from "@/lib/admin/settings";
 
 function readSessionToken(cookieHeader: string): string | null {
   const cookiePart = cookieHeader
@@ -142,6 +144,43 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         country: updated.country
       }
     });
+
+    // Notify seller via Slack when prospect is promoted to customer
+    if (autoStatus === "customer" && body.seller?.trim()) {
+      try {
+        const settings = await getResearchConfig();
+        const webhookUrl = settings.slackWebhookUrl;
+        if (webhookUrl) {
+          const sellerEmails = settings.sellerAssignments
+            .filter((a) => a.seller === body.seller?.trim())
+            .flatMap((a) => a.emails);
+          const sellerUsers = sellerEmails.length > 0
+            ? await prisma.userProfile.findMany({
+                where: { email: { in: sellerEmails } },
+                select: { slackMemberId: true, name: true }
+              })
+            : [];
+          const slackMention = sellerUsers
+            .filter((u) => u.slackMemberId)
+            .map((u) => `<@${u.slackMemberId}>`)
+            .join(" ");
+          const appUrl = process.env.APP_URL || "https://crm.vendora.se";
+          const customerLink = `${appUrl}/customers/${updated.id}`;
+          await sendSlackMessage({
+            webhookUrl,
+            title: `Ny kund tilldelad: ${updated.name}`,
+            lines: [
+              slackMention ? `Tilldelad: ${slackMention}` : `Tilldelad: ${body.seller}`,
+              `Land: ${updated.country || "-"}`,
+              `Bransch: ${updated.industry || "-"}`,
+              `<${customerLink}|Öppna kundkort>`
+            ]
+          });
+        }
+      } catch {
+        // Non-critical — don't fail the save if Slack notification fails
+      }
+    }
 
     return NextResponse.json(updated);
   } catch {

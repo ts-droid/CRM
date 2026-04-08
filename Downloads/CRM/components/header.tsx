@@ -42,9 +42,14 @@ export function Header() {
           </button>
 
           {isAdmin && (
-            <a href="/admin/research" className="vendora-btn vendora-btn-secondary" style={{ textDecoration: "none", padding: "10px 16px", fontSize: "13px" }}>
-              Admin
-            </a>
+            <>
+              <a href="/admin/research" className="vendora-btn vendora-btn-secondary" style={{ textDecoration: "none", padding: "10px 16px", fontSize: "13px" }}>
+                Admin
+              </a>
+              <a href="/admin/users" className="vendora-btn vendora-btn-secondary" style={{ textDecoration: "none", padding: "10px 16px", fontSize: "13px" }}>
+                {lang === "sv" ? "Användare" : "Users"}
+              </a>
+            </>
           )}
         </div>
       </div>
