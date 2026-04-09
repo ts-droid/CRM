@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getResearchConfig, saveResearchConfig } from "@/lib/admin/settings";
+import { prisma } from "@/lib/prisma";
 
 // PATCH supports partial updates; currently only { brands: string[] } merging is implemented
 export async function PATCH(req: Request) {
@@ -26,7 +27,17 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const config = await getResearchConfig();
-  return NextResponse.json({ config });
+
+  // Merge sellers from UserProfile (department contains "Sales") with config sellers
+  const salesUsers = await prisma.userProfile.findMany({
+    where: { department: { contains: "Sales", mode: "insensitive" } },
+    select: { name: true },
+    orderBy: { name: "asc" }
+  });
+  const userSellers = salesUsers.map((u) => u.name).filter((n): n is string => Boolean(n?.trim()));
+  const mergedSellers = Array.from(new Set([...userSellers, ...config.sellers]));
+
+  return NextResponse.json({ config: { ...config, sellers: mergedSellers } });
 }
 
 export async function PUT(req: Request) {
