@@ -151,16 +151,24 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         const settings = await getResearchConfig();
         const webhookUrl = settings.slackWebhookUrl;
         if (webhookUrl) {
-          const sellerEmails = settings.sellerAssignments
-            .filter((a) => a.seller === body.seller?.trim())
-            .flatMap((a) => a.emails);
-          const sellerUsers = sellerEmails.length > 0
-            ? await prisma.userProfile.findMany({
-                where: { email: { in: sellerEmails } },
-                select: { slackMemberId: true, name: true }
-              })
+          // Primary: look up seller by name in UserProfile
+          const sellerUser = await prisma.userProfile.findFirst({
+            where: { name: body.seller.trim(), department: { contains: "Sales", mode: "insensitive" } },
+            select: { slackMemberId: true, name: true }
+          });
+          // Fallback: legacy sellerAssignments config
+          const fallbackUsers = !sellerUser
+            ? await (async () => {
+                const emails = settings.sellerAssignments
+                  .filter((a) => a.seller === body.seller?.trim())
+                  .flatMap((a) => a.emails);
+                return emails.length > 0
+                  ? prisma.userProfile.findMany({ where: { email: { in: emails } }, select: { slackMemberId: true, name: true } })
+                  : [];
+              })()
             : [];
-          const slackMention = sellerUsers
+          const allUsers = sellerUser ? [sellerUser] : fallbackUsers;
+          const slackMention = allUsers
             .filter((u) => u.slackMemberId)
             .map((u) => `<@${u.slackMemberId}>`)
             .join(" ");

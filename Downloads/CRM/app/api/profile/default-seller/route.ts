@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth/session";
 import { getResearchConfig } from "@/lib/admin/settings";
+import { prisma } from "@/lib/prisma";
 
 function readSessionToken(cookieHeader: string): string | null {
   const cookiePart = cookieHeader
@@ -27,6 +28,16 @@ export async function GET(req: Request) {
   const email = String(session?.email ?? "").trim().toLowerCase();
   if (!email) return NextResponse.json({ defaultSeller: null }, { status: 401 });
 
+  // Primary: look up UserProfile directly — if department is Sales, use their name
+  const userProfile = await prisma.userProfile.findUnique({
+    where: { email },
+    select: { name: true, department: true }
+  });
+  if (userProfile?.department?.toLowerCase().includes("sales") && userProfile.name) {
+    return NextResponse.json({ defaultSeller: userProfile.name, email });
+  }
+
+  // Fallback: legacy sellerAssignments config
   const config = await getResearchConfig();
   const match = config.sellerAssignments.find((assignment) =>
     assignment.emails.some((candidate) => candidate.trim().toLowerCase() === email)
