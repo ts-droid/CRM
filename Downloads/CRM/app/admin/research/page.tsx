@@ -1151,6 +1151,7 @@ function ResearchAdminContent() {
             <button className={`crm-tab ${tab === "import-export" ? "active" : ""}`} type="button" onClick={() => setTab("import-export")}>{labels.importExport}</button>
             <button className={`crm-tab ${tab === "research" ? "active" : ""}`} type="button" onClick={() => setTab("research")}>{labels.research}</button>
             <button className={`crm-tab ${tab === "settings" ? "active" : ""}`} type="button" onClick={() => setTab("settings")}>{labels.settings}</button>
+            <a href="/admin/users" className="crm-tab" style={{ textDecoration: "none" }}>{lang === "sv" ? "Användare" : "Users"}</a>
           </div>
         ) : null}
       </section>
