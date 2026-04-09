@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useI18n } from "@/components/i18n";
 
+const DEPARTMENTS = ["Management", "Sales", "Marketing", "Support", "Finance", "Logistics", "RMA"];
+
 type User = {
   id: string;
   email: string;
@@ -23,6 +25,14 @@ export default function AdminUsersPage() {
   const [editSlackId, setEditSlackId] = useState("");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createEmail, setCreateEmail] = useState("");
+  const [createDepartment, setCreateDepartment] = useState("");
+  const [createSlackId, setCreateSlackId] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
 
   async function loadUsers() {
     const res = await fetch("/api/admin/users", { cache: "no-store" });
@@ -52,7 +62,7 @@ export default function AdminUsersPage() {
         body: JSON.stringify({
           id: editingUser.id,
           name: editName.trim() || null,
-          department: editDepartment.trim() || null,
+          department: editDepartment || null,
           slackMemberId: editSlackId.trim() || null
         })
       });
@@ -70,19 +80,57 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function createUser() {
+    if (!createEmail.trim()) return;
+    setCreating(true);
+    setCreateError("");
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: createName.trim() || null,
+          email: createEmail.trim().toLowerCase(),
+          department: createDepartment || null,
+          slackMemberId: createSlackId.trim() || null
+        })
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setCreateError(data.error ?? "Error");
+        return;
+      }
+      setShowCreate(false);
+      setCreateName("");
+      setCreateEmail("");
+      setCreateDepartment("");
+      setCreateSlackId("");
+      await loadUsers();
+    } catch {
+      setCreateError(lang === "sv" ? "Något gick fel" : "Something went wrong");
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <>
       <section className="crm-card">
         <div className="crm-item-head">
           <h2>{lang === "sv" ? "Användare" : "Users"}</h2>
-          <Link href="/admin/research" className="crm-button crm-button-secondary" style={{ textDecoration: "none" }}>
-            {lang === "sv" ? "← Research & Inställningar" : "← Research & Settings"}
-          </Link>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button className="crm-button" onClick={() => setShowCreate(true)}>
+              + {lang === "sv" ? "Ny användare" : "New user"}
+            </button>
+            <Link href="/admin/research" className="crm-button crm-button-secondary" style={{ textDecoration: "none" }}>
+              {lang === "sv" ? "← Research & Inställningar" : "← Research & Settings"}
+            </Link>
+          </div>
         </div>
         <p className="crm-subtle" style={{ marginTop: "0.45rem" }}>
           {lang === "sv"
-            ? "Hantera användare, avdelningar och Slack-koppling."
-            : "Manage users, departments and Slack integration."}
+            ? "Hantera användare, avdelningar och Slack-koppling. Sätt avdelning till 'Sales' för att visa som säljare."
+            : "Manage users, departments and Slack integration. Set department to 'Sales' to show as seller."}
         </p>
       </section>
 
@@ -103,7 +151,7 @@ export default function AdminUsersPage() {
                   <div style={{ display: "flex", gap: "0.35rem" }}>
                     {user.isAdmin && <span className="crm-badge">Admin</span>}
                     {user.department && <span className="crm-badge">{user.department}</span>}
-                    {user.slackMemberId && <span className="crm-badge">Slack ✓</span>}
+                    {user.slackMemberId && <span className="crm-badge">Slack</span>}
                   </div>
                 </div>
                 <p className="crm-subtle" style={{ marginTop: "0.2rem" }}>
@@ -130,12 +178,14 @@ export default function AdminUsersPage() {
                 onChange={(e) => setEditName(e.target.value)}
                 placeholder={lang === "sv" ? "Namn" : "Name"}
               />
-              <input
-                className="crm-input"
+              <select
+                className="crm-select"
                 value={editDepartment}
                 onChange={(e) => setEditDepartment(e.target.value)}
-                placeholder={lang === "sv" ? "Avdelning" : "Department"}
-              />
+              >
+                <option value="">{lang === "sv" ? "Välj avdelning" : "Select department"}</option>
+                {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
               <input
                 className="crm-input"
                 value={editSlackId}
@@ -152,6 +202,52 @@ export default function AdminUsersPage() {
               </button>
             </div>
             {status ? <p style={{ color: "#c63b25", marginTop: "0.4rem", fontSize: "0.85rem" }}>{status}</p> : null}
+          </article>
+        </div>
+      ) : null}
+
+      {showCreate ? (
+        <div className="crm-modal-backdrop" onClick={() => setShowCreate(false)}>
+          <article className="crm-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{lang === "sv" ? "Ny användare" : "New user"}</h3>
+            <div style={{ marginTop: "0.8rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <input
+                className="crm-input"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                placeholder={lang === "sv" ? "Namn" : "Name"}
+              />
+              <input
+                className="crm-input"
+                value={createEmail}
+                onChange={(e) => setCreateEmail(e.target.value)}
+                placeholder={lang === "sv" ? "E-post" : "Email"}
+                type="email"
+              />
+              <select
+                className="crm-select"
+                value={createDepartment}
+                onChange={(e) => setCreateDepartment(e.target.value)}
+              >
+                <option value="">{lang === "sv" ? "Välj avdelning" : "Select department"}</option>
+                {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <input
+                className="crm-input"
+                value={createSlackId}
+                onChange={(e) => setCreateSlackId(e.target.value)}
+                placeholder="Slack Member ID (U...)"
+              />
+            </div>
+            <div className="crm-row" style={{ marginTop: "0.8rem" }}>
+              <button className="crm-button" disabled={creating || !createEmail.trim()} onClick={createUser}>
+                {creating ? (lang === "sv" ? "Skapar..." : "Creating...") : (lang === "sv" ? "Skapa" : "Create")}
+              </button>
+              <button className="crm-button crm-button-secondary" onClick={() => setShowCreate(false)}>
+                {lang === "sv" ? "Avbryt" : "Cancel"}
+              </button>
+            </div>
+            {createError ? <p style={{ color: "#c63b25", marginTop: "0.4rem", fontSize: "0.85rem" }}>{createError}</p> : null}
           </article>
         </div>
       ) : null}

@@ -118,3 +118,45 @@ export async function PUT(req: Request) {
     );
   }
 }
+
+export async function POST(req: Request) {
+  try {
+    const body = (await req.json()) as { name?: string | null; email?: string; department?: string | null; slackMemberId?: string | null };
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
+    }
+
+    const existing = await prisma.userProfile.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json({ error: "User with this email already exists" }, { status: 400 });
+    }
+
+    const user = await prisma.userProfile.create({
+      data: {
+        email,
+        name: String(body.name || "").trim() || null,
+        department: String(body.department || "").trim() || null,
+        slackMemberId: String(body.slackMemberId || "").trim() || null
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        department: true,
+        slackMemberId: true,
+        lastLoginAt: true,
+        updatedAt: true
+      }
+    });
+
+    return NextResponse.json({
+      user: { ...user, isAdmin: isAdminEmail(user.email) }
+    }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to create user" },
+      { status: 400 }
+    );
+  }
+}
